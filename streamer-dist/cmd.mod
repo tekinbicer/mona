@@ -1,0 +1,1 @@
+python ModDistStream.py --synchronize_subscriber --publisher_address tcp://164.54.113.99:5560 --publisher_rep_address tcp://164.54.113.99:5561 --bindip 10.70.0.8 --port 5580 --beg_sinogram 0 --num_sinograms 2 --num_columns 2048 

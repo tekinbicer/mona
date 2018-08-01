@@ -1,0 +1,5 @@
+python PVAStream.py 2bmbPG3:Pva1:Image --bindip 164.54.113.99 --port 5560
+python PVAStream.py 2bmbPG3:Pva1:Image --bindip 164.54.113.99 --port 5560 --beg_sinogram 64 --num_sinograms 1
+python PVAStream.py 2bmbPG3:Pva1:Image --bindip 164.54.113.99 --port 5560 --mock_data --mock_file ./data/hornby_4_x1.h5 
+python PVAStream.py 2bmbPG3:Pva1:Image --bindip 164.54.113.99 --port 5560 --beg_sinogram 0 --num_sinograms 1 --mock_data --mock_file ./data/hornby_4_x1_conv.h5
+python PVAStream.py 2bmbPG3:Pva1:Image --bindip 164.54.113.99 --port 5560 --beg_sinogram 0 --num_sinograms 4 --mock_data --mock_file ./data/hornby_4_x1_conv.h5
