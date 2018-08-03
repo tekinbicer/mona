@@ -1,8 +1,0 @@
-xicam.streamingtomography.egg-info/PKG-INFO
-xicam.streamingtomography.egg-info/SOURCES.txt
-xicam.streamingtomography.egg-info/dependency_links.txt
-xicam.streamingtomography.egg-info/requires.txt
-xicam.streamingtomography.egg-info/top_level.txt
-xicam/streamingtomography/TraceSerializer.py
-xicam/streamingtomography/__init__.py
-xicam/streamingtomography/simple_client.py
