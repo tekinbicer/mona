@@ -10,7 +10,7 @@ import math
 sys.path.append(os.path.join(os.path.dirname(__file__), './local'))
 import flatbuffers
 import TraceSerializer
-
+import tomopy as tp
 import tracemq as tmq
 
 
@@ -42,6 +42,12 @@ def parse_arguments():
               help='Takes the minus log of projection data (projection data is divided by 50000 also).')
   parser.add_argument('--uint16_to_float32', action='store_true',
               help='Converts uint16 image byte sequence to float32.')
+  parser.add_argument('--normalize', action='store_true',
+              help='Normalizes incoming projection data with previously received dark and flat field.')
+  parser.add_argument('--remove_invalids', action='store_true',
+              help='Removes invalid measurements from incoming projections, i.e. negatives, nans and infs.')
+  parser.add_argument('--remove_stripes', action='store_true',
+              help='Removes stripes using fourier-wavelet method (in tomopy).')
 
   return parser.parse_args()
 
@@ -103,16 +109,55 @@ def main():
     #print(sub.shape)
     sub = sub[args.beg_sinogram:args.beg_sinogram+args.num_sinograms, :]
 
-    rotation=read_image.Rotation()
-    if args.degree_to_radian:
-      rotation = rotation*math.pi/180.
-    if args.mlog:
-      sub = -np.log((sub/4000.))#/50000.)) # 50000?
 
-    ncols = sub.shape[1] 
-    sub = sub.reshape(sub.shape[0]*sub.shape[1])
-    tmq.push_image(sub, args.num_sinograms, ncols, rotation, 
-                    read_image.UniqueId(), read_image.Center())
+
+    # If incoming data is projection
+    if read_image.Itype() is serializer.ITypes.Projection:
+      rotation=read_image.Rotation()
+      if args.degree_to_radian: rotation = rotation*math.pi/180.
+
+      # Tomopy operations expect 3D data, reshape incoming projections.
+      sub = np.reshape(sub, (1, sub.shape[0], sub.shape[1]))
+      if args.normalize: sub = tp.normalize(sub, flat, dark) # XXX note flat/dark fields need to be the corresponding sinograms
+
+      if args.remove_stripe: sub = tp.remove_stripe_fw(sub, level=7, wname='sym16', sigma=1, pad=True)
+
+      if args.mlog: sub = -np.log(sub)
+
+      if args.remove_nan:
+        sub = tp.remove_nan(sub, val=0.0)
+        sub = tp.remove_neg(sub, val=0.00)
+        sub[np.where(sub == np.inf)] = 0.00
+
+      ncols = sub.shape[2] 
+      sub = sub.reshape(sub.shape[0]*sub.shape[1]*sub.shape[2])
+      tmq.push_image(sub, args.num_sinograms, ncols, rotation, 
+                      read_image.UniqueId(), read_image.Center())
+
+
+
+    # If incoming data is white field
+    if read_image.Itype() is serializer.ITypes.White: pass
+
+
+
+    # If incoming data is white-reset
+    if read_image.Itype() is serializer.ITypes.WhiteReset: pass
+
+
+
+    # If incoming data is dark field
+    if read_image.Itype() is serializer.ITypes.Dark: pass
+
+
+
+    # If incoming data is dark-reset 
+    if read_image.Itype() is serializer.ITypes.DarkReset: pass
+
+
+    
+
+
     total_received += 1
     total_size += len(msg)
   time1 = time.time()

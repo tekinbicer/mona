@@ -1,5 +1,7 @@
 namespace MONA.TraceDS;
 
+enum IType:byte { Projection=0, White=1, Dark=2, WhiteReset=3, DarkReset=4 }
+
 struct Dim2 {
   y:int;
   x:int;
@@ -11,6 +13,7 @@ table TImage{
   rotation:float;
   center:float;
   uniqueId:int;
+  itype:IType;
   tdata:[ubyte];
 }
 

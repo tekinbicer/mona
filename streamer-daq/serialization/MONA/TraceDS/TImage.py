@@ -58,8 +58,15 @@ class TImage(object):
         return 0
 
     # TImage
-    def Tdata(self, j):
+    def Itype(self):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
+        if o != 0:
+            return self._tab.Get(flatbuffers.number_types.Int8Flags, o + self._tab.Pos)
+        return 0
+
+    # TImage
+    def Tdata(self, j):
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(16))
         if o != 0:
             a = self._tab.Vector(o)
             return self._tab.Get(flatbuffers.number_types.Uint8Flags, a + flatbuffers.number_types.UOffsetTFlags.py_type(j * 1))
@@ -67,24 +74,25 @@ class TImage(object):
 
     # TImage
     def TdataAsNumpy(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(16))
         if o != 0:
             return self._tab.GetVectorAsNumpy(flatbuffers.number_types.Uint8Flags, o)
         return 0
 
     # TImage
     def TdataLength(self):
-        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(14))
+        o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(16))
         if o != 0:
             return self._tab.VectorLen(o)
         return 0
 
-def TImageStart(builder): builder.StartObject(6)
+def TImageStart(builder): builder.StartObject(7)
 def TImageAddSeq(builder, seq): builder.PrependInt32Slot(0, seq, 0)
 def TImageAddDims(builder, dims): builder.PrependStructSlot(1, flatbuffers.number_types.UOffsetTFlags.py_type(dims), 0)
 def TImageAddRotation(builder, rotation): builder.PrependFloat32Slot(2, rotation, 0.0)
 def TImageAddCenter(builder, center): builder.PrependFloat32Slot(3, center, 0.0)
 def TImageAddUniqueId(builder, uniqueId): builder.PrependInt32Slot(4, uniqueId, 0)
-def TImageAddTdata(builder, tdata): builder.PrependUOffsetTRelativeSlot(5, flatbuffers.number_types.UOffsetTFlags.py_type(tdata), 0)
+def TImageAddItype(builder, itype): builder.PrependInt8Slot(5, itype, 0)
+def TImageAddTdata(builder, tdata): builder.PrependUOffsetTRelativeSlot(6, flatbuffers.number_types.UOffsetTFlags.py_type(tdata), 0)
 def TImageStartTdataVector(builder, numElems): return builder.StartVector(1, numElems, 1)
 def TImageEnd(builder): return builder.EndObject()

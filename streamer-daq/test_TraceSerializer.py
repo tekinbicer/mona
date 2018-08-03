@@ -21,8 +21,11 @@ class TestTraceImageSerializer(unittest.TestCase):
     builder = flatbuffers.Builder(0)
     serializer = TraceSerializer.ImageSerializer(builder)
 
+    itype = serializer.ITypes.Projection
+
     # Serialize
-    serialized_data = serializer.serialize(image=image, uniqueId=uniqueId, rotation=rotation)
+    serialized_data = serializer.serialize(image=image, uniqueId=uniqueId, 
+                                            itype=itype, rotation=rotation)
 
     # Deserialize
     read_image = serializer.deserialize(serialized_image=serialized_data)
@@ -36,8 +39,9 @@ class TestTraceImageSerializer(unittest.TestCase):
     my_image = np.reshape(my_image, dims)
 
     self.assertTrue(np.array_equal(my_image, image))
-    self.assertTrue(read_image.UniqueId(), uniqueId)
-    self.assertTrue(read_image.Rotation(), rotation)
+    self.assertEqual(read_image.UniqueId(), uniqueId)
+    self.assertAlmostEqual(read_image.Rotation(), rotation)
+    self.assertEqual(read_image.Itype(), itype)
 
     builder.Reset()
 

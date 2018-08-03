@@ -7,6 +7,7 @@ import time
 import flatbuffers
 import MONA.TraceDS.Dim2 as Dim2
 import MONA.TraceDS.TImage as TImage
+import MONA.TraceDS.IType as IType
 
 class ImageSerializer:
   """
@@ -27,8 +28,10 @@ class ImageSerializer:
     """
     self.builder = builder
 
+    self.ITypes = IType.IType
 
-  def serialize(self, image, uniqueId, center=None, rotation=None, rotation_step=None, seq=0):
+
+  def serialize(self, image, uniqueId, itype=None, center=None, rotation=None, rotation_step=None, seq=0):
     r"""
     Serializes the provided image data using builder.
 
@@ -42,7 +45,12 @@ class ImageSerializer:
       converted to sequence of bytes and copied to serialization buffer.
 
     uniqueId : np.int32
-      Image's unique id. This information will be used for detecting
+      Image's unique id.
+
+    itype : IType
+      Image's type. Currently, five options are supported (Projection,
+      White, Dark, WhiteReset, DarkReset.) The remaining pipeline runs
+      according to this type information. 
 
     center : np.float32
       Center information of the image. If nothing is passed, then center
@@ -110,6 +118,7 @@ class ImageSerializer:
     center = center if center is not None else image.shape[1]/2.
     TImage.TImageAddCenter(builder, center)
     TImage.TImageAddUniqueId(builder, uniqueId)
+    TImage.TImageAddItype(builder, itype)
     TImage.TImageAddTdata(builder, img_buf_offset)
     TImage.TImageAddSeq(builder, seq)
     serialized_image_offset = TImage.TImageEnd(builder)

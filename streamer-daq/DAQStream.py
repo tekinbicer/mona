@@ -8,7 +8,6 @@ import TraceSerializer
 import time
 import sys
 import os
-import pvaccess
 sys.path.append(os.path.join(os.path.dirname(__file__), './local'))
 import flatbuffers
 
@@ -62,22 +61,9 @@ def synchronize_subs(context, subscriber_count, bind_address_rep):
 
 
 def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
-  import h5py as h5
-  ifptr = h5.File(input_f, 'r')
-  #idata = np.array(ifptr['exchange/data'], dtype=np.float32)
-  #itheta = np.array(ifptr['exchange/theta'], dtype=np.float32)
-  #if num_sinograms>0: 
-  #    if (beg_sinogram<0) or (beg_sinogram+num_sinograms>idata.shape[1]): 
-  #      raise Exception("Exceeds the sinogram boundary: {} vs. {}".format(
-  #                          beg_sinogram+num_sinograms, idata.shape[1]))
-  #    idata = idata[:, beg_sinogram:beg_sinogram+num_sinograms, :]
-  if num_sinograms>0:
-    idata = np.array(ifptr['exchange/data'][:, beg_sinogram:beg_sinogram+num_sinograms, :])
-  else:
-    idata = idata[:, beg_sinogram:beg_sinogram+num_sinograms, :]
-  itheta = np.array(ifptr['exchange/theta'])
-  ifptr.close()
-  return idata, itheta
+  import dxchange
+  idata, flat, dark, itheta = dxchange.read_aps_32id(input_f)
+  return idata, flat, dark, itheta
 
 
 def test_daq(publisher_socket, builder,
@@ -103,21 +89,62 @@ def test_daq(publisher_socket, builder,
 
 
 def simulate_daq(publisher_socket, builder, input_f, 
-                      beg_sinogram=0, num_sinograms=0, seq=0):
+                      beg_sinogram=0, num_sinograms=0, seq=0, slp=0.5):
   # Read image data and theta values
-  idata, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
+  idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
 
 
+  # Send flat data
+  start_index=0
+  if flat is not None:
+    for uniqueFlatId, flatId in zip(range(start_index, start_index+flat.shape[0]), 
+                                    range(flat.shape[0])):
+      builder.Reset()
+      dflat = flat[flatId]
+      print("Publishing flat={}; shape={}".format(uniqueFlatId, flat.shape))
+      serializer = TraceSerializer.ImageSerializer(builder)
+      itype = serializer.ITypes.WhiteReset if flatId is 0 else serializer.ITypes.White
+      serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueFlatId, 
+                                        itype=itype,
+                                        rotation=rotation, seq=seq) #, center=10.)
+      seq+=1
+      publisher_socket.send(serialized_data)
+      time.sleep(slp)
+
+  # Send dark data
+  start_index+=flat.shape[0]
+  if dark is not None:
+    for uniqueDarkId, darkId in zip(range(start_index, start_index+dark.shape[0]), 
+                                    range(dark.shape[0])):
+      builder.Reset()
+      dflat = dark[flatId]
+      print("Publishing dark={}; shape={}".format(uniqueDarkId, flat.shape))
+      serializer = TraceSerializer.ImageSerializer(builder)
+      itype = serializer.ITypes.DarkReset if darkId is 0 else serializer.ITypes.Dark
+      serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueDarkId, 
+                                        itype=itype,
+                                        rotation=rotation, seq=seq) #, center=10.)
+      seq+=1
+      publisher_socket.send(serialized_data)
+      time.sleep(slp)
+
+  # Send projection data
+  start_index+=dark.shape[0]
   print(idata.shape, len(itheta), idata.size)
-  for uniqueId, projId, rotation in zip(range(idata.shape[0]), range(idata.shape[0]), itheta):
+  for uniqueId, projId, rotation in zip(range(start_index, start_index+idata.shape[0]), 
+                                        range(idata.shape[0]), itheta):
     builder.Reset()
     proj =  idata[projId]
+    print("Publishing={}; shape={}".format(uniqueId, proj.shape))
     serializer = TraceSerializer.ImageSerializer(builder)
+    itype = serializer.ITypes.Projection
     serialized_data = serializer.serialize(image=proj, uniqueId=uniqueId,
-                                      rotation=rotation, seq=seq) 
+                                      itype=itype,
+                                      rotation=rotation, seq=seq) #, center=10.)
     seq+=1
     publisher_socket.send(serialized_data)
-    
+    time.sleep(slp)
+
   return seq
 
 
@@ -125,6 +152,8 @@ def simulate_daq(publisher_socket, builder, input_f,
 class TImageTransfer:
   def __init__(self, publisher_socket, pv_image, builder,
                 beg_sinogram=0, num_sinograms=0, seq=0):
+    import pvaccess
+
     self.publisher_socket = publisher_socket
     self.pv_image = pv_image
     self.builder = builder
@@ -132,6 +161,7 @@ class TImageTransfer:
     self.num_sinograms = num_sinograms
     self.seq = seq
     self.pv_channel = None
+    self.lastImageId=0
 
 
   def __enter__(self):
@@ -160,7 +190,8 @@ class TImageTransfer:
 
 
   def push_image_data(self, data):
-    img = np.frombuffer(data['value'][0]['ushortValue'], dtype=np.uint16)
+    #img = np.frombuffer(data['value'][0]['ushortValue'], dtype=np.uint16)
+    img = np.frombuffer(data['value'][0]['ubyteValue'], dtype=np.uint16)
     uniqueId = data['uniqueId']
     #scanDelta = data['ScanDelta']
     #scanDelta = data['StartPos']
@@ -171,11 +202,13 @@ class TImageTransfer:
     scan_delta = data["attribute"][self.scan_delta_key]["value"][0]["value"]
     start_position = data["attribute"][self.start_position_key]["value"][0]["value"]
     theta = (start_position + uniqueId*scan_delta) % 360.0
-    print("UniqueID={}, Rotation Angel={}".format(uniqueId, theta))
-    if self.num_sinograms!=0:
-      img = img[self.beg_index : self.end_index]
-      img = img.reshape((self.num_sinograms, self.dims[1]))
-    else: img = img.reshape(self.dims)
+    diff = self.lastImageId-(uniqueId-1)
+    self.lastImageId = uniqueId
+    print("UniqueID={}, Rotation Angel={}; Id Check={}".format(uniqueId, theta, diff))
+    #if self.num_sinograms!=0:
+    #  img = img[self.beg_index : self.end_index]
+    #  img = img.reshape((self.num_sinograms, self.dims[1]))
+    #else: img = img.reshape(self.dims)
 
     self.builder.Reset()
     serializer = TraceSerializer.ImageSerializer(self.builder)
