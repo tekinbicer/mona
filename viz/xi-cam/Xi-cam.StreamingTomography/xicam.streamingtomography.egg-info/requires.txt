@@ -1,8 +1,0 @@
-numpy
-qtpy
-zmq
-pyqtgraph
-
-[tests]
-pytest
-coverage
