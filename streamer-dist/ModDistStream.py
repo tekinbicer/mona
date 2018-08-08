@@ -79,11 +79,15 @@ def main():
   if args.synchronize_subscriber:
     synchronize_subs(context, args.publisher_rep_address)
 
-
   # Setup flatbuffer builder and serializer
   builder = flatbuffers.Builder(0)
   serializer = TraceSerializer.ImageSerializer(builder)
 
+  # White/dark fields
+  # TODO Create a struct/class for the below two
+  white_imgs=[]; tot_white_imgs=0; 
+  dark_imgs=[]; tot_dark_imgs=0;
+  
   # Receive images
   total_received=0
   total_size=0
@@ -105,10 +109,9 @@ def main():
     if args.uint16_to_float32:
       my_image_np.dtype = np.uint16
       sub = np.array(my_image_np, dtype="float32")
-    sub = sub.reshape((read_image.Dims().Y(), read_image.Dims().X()))
-    #print(sub.shape)
-    sub = sub[args.beg_sinogram:args.beg_sinogram+args.num_sinograms, :]
-
+    else: sub = my_image_np
+    sub = sub.reshape((1, read_image.Dims().Y(), read_image.Dims().X()))
+    sub = sub[:, args.beg_sinogram:args.beg_sinogram+args.num_sinograms, :]
 
 
     # If incoming data is projection
@@ -117,14 +120,18 @@ def main():
       if args.degree_to_radian: rotation = rotation*math.pi/180.
 
       # Tomopy operations expect 3D data, reshape incoming projections.
-      sub = np.reshape(sub, (1, sub.shape[0], sub.shape[1]))
-      if args.normalize: sub = tp.normalize(sub, flat, dark) # XXX note flat/dark fields need to be the corresponding sinograms
-
-      if args.remove_stripe: sub = tp.remove_stripe_fw(sub, level=7, wname='sym16', sigma=1, pad=True)
-
-      if args.mlog: sub = -np.log(sub)
-
-      if args.remove_nan:
+      if args.normalize: 
+        # flat/dark fields' corresponding rows
+        print("normalizing")
+        sub = tp.normalize(sub, flat=white_imgs, dark=dark_imgs)
+      if args.remove_stripes: 
+        print("removing stripes")
+        sub = tp.remove_stripe_fw(sub, level=7, wname='sym16', sigma=1, pad=True)
+      if args.mlog: 
+        print("applying -log")
+        sub = -np.log(sub)
+      if args.remove_invalids:
+        print("removing invalids")
         sub = tp.remove_nan(sub, val=0.0)
         sub = tp.remove_neg(sub, val=0.00)
         sub[np.where(sub == np.inf)] = 0.00
@@ -134,28 +141,31 @@ def main():
       tmq.push_image(sub, args.num_sinograms, ncols, rotation, 
                       read_image.UniqueId(), read_image.Center())
 
-
-
     # If incoming data is white field
-    if read_image.Itype() is serializer.ITypes.White: pass
-
-
+    if read_image.Itype() is serializer.ITypes.White: 
+      print("White field data is received: {}".format(read_image.UniqueId()))
+      white_imgs.extend(sub)
+      tot_white_imgs += 1
 
     # If incoming data is white-reset
-    if read_image.Itype() is serializer.ITypes.WhiteReset: pass
-
-
+    if read_image.Itype() is serializer.ITypes.WhiteReset: 
+      print("White-reset data is received: {}".format(read_image.UniqueId()))
+      white_imgs=[]
+      white_imgs.extend(sub)
+      tot_white_imgs += 1
 
     # If incoming data is dark field
-    if read_image.Itype() is serializer.ITypes.Dark: pass
-
-
+    if read_image.Itype() is serializer.ITypes.Dark:
+      print("Dark data is received: {}".format(read_image.UniqueId())) 
+      dark_imgs.extend(sub)
+      tot_dark_imgs += 1
 
     # If incoming data is dark-reset 
-    if read_image.Itype() is serializer.ITypes.DarkReset: pass
-
-
-    
+    if read_image.Itype() is serializer.ITypes.DarkReset:
+      print("Dark-reset data is received:\n{}".format(read_image.UniqueId())) 
+      dark_imgs=[]
+      dark_imgs.extend(sub)
+      tot_dark_imgs += 1
 
 
     total_received += 1

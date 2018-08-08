@@ -162,6 +162,6 @@ class ImageSerializer:
   def info(self, timage):
     if not isinstance(timage, TImage.TImage):
       print("Not an instance of TImage.TImage: {}".format(timage))
-    print("Image unique id={}; dims={}; rotation={}; center={}"
+    print("Image unique id={}; dims={}; rotation={}; center={}; itype={}"
             .format(timage.UniqueId(), (timage.Dims().Y(), timage.Dims().X()), 
-                    timage.Rotation(), timage.Center()))
+                    timage.Rotation(), timage.Center(), timage.Itype()))

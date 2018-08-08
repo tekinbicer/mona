@@ -60,12 +60,6 @@ def synchronize_subs(context, subscriber_count, bind_address_rep):
     print("Joined subscriber: {}/{}".format(counter, subscriber_count))
 
 
-def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
-  import dxchange
-  idata, flat, dark, itheta = dxchange.read_aps_32id(input_f)
-  return idata, flat, dark, itheta
-
-
 def test_daq(publisher_socket, builder,
               rotation_step=0.25, num_sinograms=0, 
               num_sinogram_columns=2048, seq=0,
@@ -88,15 +82,22 @@ def test_daq(publisher_socket, builder,
 
 
 
+def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
+  import dxchange
+  idata, flat, dark, itheta = dxchange.read_aps_32id(input_f)
+  return idata, flat, dark, itheta
+
 def simulate_daq(publisher_socket, builder, input_f, 
-                      beg_sinogram=0, num_sinograms=0, seq=0, slp=0.5):
+                      beg_sinogram=0, num_sinograms=0, seq=0, slp=0.):
   # Read image data and theta values
+  print("reading data")
   idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
 
-
   # Send flat data
+  print("a")
   start_index=0
   if flat is not None:
+    print("b")
     for uniqueFlatId, flatId in zip(range(start_index, start_index+flat.shape[0]), 
                                     range(flat.shape[0])):
       builder.Reset()
@@ -106,14 +107,16 @@ def simulate_daq(publisher_socket, builder, input_f,
       itype = serializer.ITypes.WhiteReset if flatId is 0 else serializer.ITypes.White
       serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueFlatId, 
                                         itype=itype,
-                                        rotation=rotation, seq=seq) #, center=10.)
+                                        rotation=0, seq=seq) #, center=10.)
       seq+=1
       publisher_socket.send(serialized_data)
       time.sleep(slp)
 
   # Send dark data
   start_index+=flat.shape[0]
+  print("c")
   if dark is not None:
+    print("c")
     for uniqueDarkId, darkId in zip(range(start_index, start_index+dark.shape[0]), 
                                     range(dark.shape[0])):
       builder.Reset()
@@ -123,13 +126,14 @@ def simulate_daq(publisher_socket, builder, input_f,
       itype = serializer.ITypes.DarkReset if darkId is 0 else serializer.ITypes.Dark
       serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueDarkId, 
                                         itype=itype,
-                                        rotation=rotation, seq=seq) #, center=10.)
+                                        rotation=0, seq=seq) #, center=10.)
       seq+=1
       publisher_socket.send(serialized_data)
       time.sleep(slp)
 
   # Send projection data
   start_index+=dark.shape[0]
+  print("d")
   print(idata.shape, len(itheta), idata.size)
   for uniqueId, projId, rotation in zip(range(start_index, start_index+idata.shape[0]), 
                                         range(idata.shape[0]), itheta):
@@ -172,6 +176,9 @@ class TImageTransfer:
     self.theta_key = labels.index("SampleRotary")
     self.scan_delta_key = labels.index("ScanDelta")
     self.start_position_key = labels.index("StartPos")
+    self.last_save_dest = labels.index("SaveDest")
+    self.flat_count=0
+    self.dark_count=0
     print(self.dims)
     if self.num_sinograms>0:
       if (self.beg_sinogram<0) or (self.beg_sinogram+self.num_sinograms>self.dims[0]): 
@@ -190,18 +197,25 @@ class TImageTransfer:
 
 
   def push_image_data(self, data):
-    #img = np.frombuffer(data['value'][0]['ushortValue'], dtype=np.uint16)
     img = np.frombuffer(data['value'][0]['ubyteValue'], dtype=np.uint16)
     uniqueId = data['uniqueId']
-    #scanDelta = data['ScanDelta']
-    #scanDelta = data['StartPos']
-    #scanDelta = data['SaveDest']
-    #theta = (uniqueID%360)*scanDelta
-    #theta = (uniqueId%(360/0.24))*0.24
-    #theta = data["attribute"][theta_key]["value"][0]["value"]
     scan_delta = data["attribute"][self.scan_delta_key]["value"][0]["value"]
     start_position = data["attribute"][self.start_position_key]["value"][0]["value"]
-    theta = (start_position + uniqueId*scan_delta) % 360.0
+    # XXX with flat/dark field data uniquId is not a correct value any more
+    itype=data["attribute"][self.last_save_dest]["value"][0]["value"]
+    if itype is "/exchange/data":
+      print("Projection data: {}".format(uniqueId))
+      itype=serializer.ITypes.Projection
+    if itype is "/exchange/data_white":
+      print("White field: {}".format(uniqueId))
+      itype=serializer.ITypes.White
+      self.flat_count+=1
+    if itype is "/exchange/data_dark":
+      print("Dark field: {}".format(uniqueId))
+      itype=serializer.ITypes.Dark
+      self.flat_count+=1
+
+    theta = (start_position + (uniqueId-(self.flat_count+self.dark_count))*scan_delta) % 360.0
     diff = self.lastImageId-(uniqueId-1)
     self.lastImageId = uniqueId
     print("UniqueID={}, Rotation Angel={}; Id Check={}".format(uniqueId, theta, diff))
@@ -213,6 +227,7 @@ class TImageTransfer:
     self.builder.Reset()
     serializer = TraceSerializer.ImageSerializer(self.builder)
     serialized_data = serializer.serialize(image=img, uniqueId=uniqueId,
+                                itype=itype,
                                 rotation=theta, seq=self.seq)
     self.publisher_socket.send(serialized_data)
     self.seq+=1
