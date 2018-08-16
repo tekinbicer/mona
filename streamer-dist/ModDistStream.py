@@ -18,7 +18,7 @@ def parse_arguments():
   parser = argparse.ArgumentParser( description='Data Acquisition Process')
   parser.add_argument('--synchronize_subscriber', action='store_true',
       help='Synchronizes this subscriber to publisher (publisher should wait for subscriptions)')
-  parser.add_argument('--subscriber_hwm', type=int, default=10*1024, 
+  parser.add_argument('--subscriber_hwm', type=int, default=10240, 
       help='Sets high water mark value for this subscriber.')
   parser.add_argument('--publisher_address', default=None,
       help='Remote publisher address')
@@ -48,6 +48,8 @@ def parse_arguments():
               help='Removes invalid measurements from incoming projections, i.e. negatives, nans and infs.')
   parser.add_argument('--remove_stripes', action='store_true',
               help='Removes stripes using fourier-wavelet method (in tomopy).')
+  parser.add_argument('--disable_tmq', action='store_true', default=False,
+              help='Disable tmq for testing.')
 
   return parser.parse_args()
 
@@ -58,7 +60,7 @@ def synchronize_subs(context, publisher_rep_address):
 
   sync_socket.send(b'') # Send synchronization signal
   sync_socket.recv() # Receive reply
-  
+
 
 def main():
   args = parse_arguments()
@@ -66,9 +68,13 @@ def main():
   context = zmq.Context()
 
   # TQM setup
-  tmq.init_tmq()
-  # Handshake w. remote processes
-  tmq.handshake(args.bindip, args.port, args.num_sinograms, args.num_columns)
+  if not args.disable_tmq:
+    if args.bindip is None: 
+      print("Bind ip (--bindip) is not defined. Exiting.")
+      sys.exit(0)
+    tmq.init_tmq()
+    # Handshake w. remote processes
+    tmq.handshake(args.bindip, args.port, args.num_sinograms, args.num_columns)
 
   # Subscriber setup
   subscriber_socket = context.socket(zmq.SUB)
@@ -111,7 +117,8 @@ def main():
       sub = np.array(my_image_np, dtype="float32")
     else: sub = my_image_np
     sub = sub.reshape((1, read_image.Dims().Y(), read_image.Dims().X()))
-    sub = sub[:, args.beg_sinogram:args.beg_sinogram+args.num_sinograms, :]
+    if args.num_sinograms is not None:
+      sub = sub[:, args.beg_sinogram:args.beg_sinogram+args.num_sinograms, :]
 
 
     # If incoming data is projection
@@ -122,7 +129,7 @@ def main():
       # Tomopy operations expect 3D data, reshape incoming projections.
       if args.normalize: 
         # flat/dark fields' corresponding rows
-        print("normalizing")
+        print("normalizing: white_imgs.shape={}; dark_imgs.shape={}".format(np.array(white_imgs).shape, np.array(dark_imgs).shape))
         sub = tp.normalize(sub, flat=white_imgs, dark=dark_imgs)
       if args.remove_stripes: 
         print("removing stripes")
@@ -138,8 +145,10 @@ def main():
 
       ncols = sub.shape[2] 
       sub = sub.reshape(sub.shape[0]*sub.shape[1]*sub.shape[2])
-      tmq.push_image(sub, args.num_sinograms, ncols, rotation, 
-                      read_image.UniqueId(), read_image.Center())
+
+      if not args.disable_tmq:
+        tmq.push_image(sub, args.num_sinograms, ncols, rotation, 
+                        read_image.UniqueId(), read_image.Center())
 
     # If incoming data is white field
     if read_image.Itype() is serializer.ITypes.White: 
@@ -178,9 +187,9 @@ def main():
             (total_size/(2**20))/(time1-time0), total_received/(time1-time0)))
 
   # Finalize TMQ
-  tmq.done_image()
-  tmq.finalize_tmq()
-
+  if not args.disable_tmq:
+    tmq.done_image()
+    tmq.finalize_tmq()
 
 
 
