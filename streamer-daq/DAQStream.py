@@ -19,7 +19,7 @@ def parse_arguments():
 
   parser.add_argument('--bind_address_publisher', default="tcp://*:5560",
                       help='Address to bind publisher.')
-  parser.add_argument('--publisher_hwm', type=int, default=10*1024,
+  parser.add_argument('--publisher_hwm', type=int, default=0,
                       help='Sets high water mark value for publisher.')
   parser.add_argument('--synchronize_subscribers', action='store_true',
                       help='Waits for all subscribers to join.')
@@ -44,7 +44,8 @@ def parse_arguments():
   return parser.parse_args()
 
 def synchronize_subs(context, subscriber_count, bind_address_rep):
-  print("Synching")
+  print("Synching on: subscriber_count={}; bind_address_rep={}".format(
+    subscriber_count, bind_address_rep))
   # Socket to receive signals
   sync_socket = context.socket(zmq.REP)
   sync_socket.bind(bind_address_rep)
@@ -68,12 +69,13 @@ def test_daq(publisher_socket, builder,
   if num_sinograms<1: num_sinograms=2048
   # Randomly generate image data
   dims=(num_sinograms, num_sinogram_columns)
-  image = np.random.randint(2, size=dims, dtype=np.uint16)
+  image = np.array(np.random.randint(2, size=dims), dtype='uint16')
 
   for uniqueId in range(num_sinogram_projections):
     builder.Reset()
     serializer = TraceSerializer.ImageSerializer(builder)
     serialized_data = serializer.serialize(image=image, uniqueId=uniqueId+7,
+                                      itype=serializer.ITypes.Projection, 
                                       rotation_step=rotation_step, seq=seq) 
     seq+=1
     publisher_socket.send(serialized_data)
@@ -84,20 +86,25 @@ def test_daq(publisher_socket, builder,
 
 def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
   import dxchange
-  idata, flat, dark, itheta = dxchange.read_aps_32id(input_f)
+  import tomopy as tp
+  idata, flat, dark = dxchange.read_aps_32id(input_f)
+  idata = np.array(idata, dtype=np.dtype('uint16'))
+  flat = np.array(flat, dtype=np.dtype('uint16'))
+  dark = np.array(dark, dtype=np.dtype('uint16'))
+  itheta = tp.sim.project.angles(idata.shape[0])
   return idata, flat, dark, itheta
 
 def simulate_daq(publisher_socket, builder, input_f, 
-                      beg_sinogram=0, num_sinograms=0, seq=0, slp=0.):
+                      beg_sinogram=0, num_sinograms=0, seq=0, slp=0):
   # Read image data and theta values
   print("reading data")
+  t0=time.time()
   idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
+  print("reading time={}".format(time.time()-t0))
 
   # Send flat data
-  print("a")
   start_index=0
   if flat is not None:
-    print("b")
     for uniqueFlatId, flatId in zip(range(start_index, start_index+flat.shape[0]), 
                                     range(flat.shape[0])):
       builder.Reset()
@@ -114,9 +121,7 @@ def simulate_daq(publisher_socket, builder, input_f,
 
   # Send dark data
   start_index+=flat.shape[0]
-  print("c")
   if dark is not None:
-    print("c")
     for uniqueDarkId, darkId in zip(range(start_index, start_index+dark.shape[0]), 
                                     range(dark.shape[0])):
       builder.Reset()
@@ -133,7 +138,6 @@ def simulate_daq(publisher_socket, builder, input_f,
 
   # Send projection data
   start_index+=dark.shape[0]
-  print("d")
   print(idata.shape, len(itheta), idata.size)
   for uniqueId, projId, rotation in zip(range(start_index, start_index+idata.shape[0]), 
                                         range(idata.shape[0]), itheta):
@@ -277,6 +281,7 @@ def main():
       tdet.start_monitor()  # Infinite loop
 
   elif args.daq_mod == 1: # Simulate data acquisition with a file
+    print("simulating on a file")
     simulate_daq(publisher_socket=publisher_socket, 
               input_f=args.simulation_file, builder=builder,
               beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms)
