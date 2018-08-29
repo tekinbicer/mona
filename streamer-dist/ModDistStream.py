@@ -42,6 +42,8 @@ def parse_arguments():
               help='Takes the minus log of projection data (projection data is divided by 50000 also).')
   parser.add_argument('--uint16_to_float32', action='store_true',
               help='Converts uint16 image byte sequence to float32.')
+  parser.add_argument('--uint8_to_float32', action='store_true',
+              help='Converts uint8 image byte sequence to float32.')
   parser.add_argument('--normalize', action='store_true',
               help='Normalizes incoming projection data with previously received dark and flat field.')
   parser.add_argument('--remove_invalids', action='store_true',
@@ -50,6 +52,13 @@ def parse_arguments():
               help='Removes stripes using fourier-wavelet method (in tomopy).')
   parser.add_argument('--disable_tmq', action='store_true', default=False,
               help='Disable tmq for testing.')
+
+  parser.add_argument('--center_messup', type=float,
+                          help='Rotation center is set to center-(given value)'
+                          ' for initial 750 projections, then fixed.', default=0)
+  parser.add_argument('--center_messup_after_receiving', type=float,
+                          help='Messup rotation center after receiving '
+                          ' given number of projections.', default=0)
 
   return parser.parse_args()
 
@@ -112,8 +121,12 @@ def main():
 
     # Push image to workers (REQ/REP)
     my_image_np = read_image.TdataAsNumpy()
+    # XXX redundant if else below, fix it
     if args.uint16_to_float32:
       my_image_np.dtype = np.uint16
+      sub = np.array(my_image_np, dtype="float32")
+    elif args.uint8_to_float32:
+      my_image_np.dtype = np.uint8
       sub = np.array(my_image_np, dtype="float32")
     else: sub = my_image_np
     sub = sub.reshape((1, read_image.Dims().Y(), read_image.Dims().X()))
@@ -122,15 +135,27 @@ def main():
 
 
     # If incoming data is projection
+    center=read_image.Center()
     if read_image.Itype() is serializer.ITypes.Projection:
       rotation=read_image.Rotation()
-      if args.degree_to_radian: rotation = rotation*math.pi/180.
+      if args.degree_to_radian: 
+        rotation = rotation*math.pi/180.
+            
+      #XXX Something seems to be wrong while passing the center to tracemq
+      if args.center_messup>0.:
+        if total_received<args.center_messup_after_receiving:
+          print("setting center {} --> {}".format(read_image.Center(), 
+                                            read_image.Center()-args.center_messup))
+          center=read_image.Center()-args.center_messup
+      else: center=read_image.Center()
 
       # Tomopy operations expect 3D data, reshape incoming projections.
       if args.normalize: 
         # flat/dark fields' corresponding rows
-        print("normalizing: white_imgs.shape={}; dark_imgs.shape={}".format(np.array(white_imgs).shape, np.array(dark_imgs).shape))
-        sub = tp.normalize(sub, flat=white_imgs, dark=dark_imgs)
+        if tot_white_imgs>0 and tot_dark_imgs>0:
+          print("normalizing: white_imgs.shape={}; dark_imgs.shape={}".format(
+                  np.array(white_imgs).shape, np.array(dark_imgs).shape))
+          sub = tp.normalize(sub, flat=white_imgs, dark=dark_imgs)
       if args.remove_stripes: 
         print("removing stripes")
         sub = tp.remove_stripe_fw(sub, level=7, wname='sym16', sigma=1, pad=True)
@@ -148,7 +173,7 @@ def main():
 
       if not args.disable_tmq:
         tmq.push_image(sub, args.num_sinograms, ncols, rotation, 
-                        read_image.UniqueId(), read_image.Center())
+                        read_image.UniqueId(), center)
 
     # If incoming data is white field
     if read_image.Itype() is serializer.ITypes.White: 
