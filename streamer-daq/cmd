@@ -1,1 +1,0 @@
-python DAQStream.py --synchronize_subscribers --subscriber_count 2 --bind_address_rep tcp://164.54.113.99:5561

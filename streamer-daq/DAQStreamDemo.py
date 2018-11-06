@@ -1,5 +1,3 @@
-#!/home/beams/USER2BMB/Apps/BlueSky/bin/python
-
 import argparse
 import sys
 import numpy as np
@@ -8,21 +6,21 @@ import TraceSerializer
 import time
 import sys
 import os
-import pvaccess
 sys.path.append(os.path.join(os.path.dirname(__file__), './local'))
 import flatbuffers
-import dquality
+import h5py as h5
+import dxchange
+import tomopy as tp
 
 def parse_arguments():
   parser = argparse.ArgumentParser(
-          description='Data Acquisition Process')
-  parser.add_argument("--image_pv", default="2bmbPG3:Pva1:Image",
-                      help="EPICS PVA image PV name. Default to lyra point grey.")
+          description='Data Acquisition Process Simulator')
 
   parser.add_argument('--bind_address_publisher', default="tcp://*:5560",
                       help='Address to bind publisher.')
   parser.add_argument('--publisher_hwm', type=int, default=0,
                       help='Sets high water mark value for publisher.')
+
   parser.add_argument('--synchronize_subscribers', action='store_true',
                       help='Waits for all subscribers to join.')
   parser.add_argument('--subscriber_count', type=int,
@@ -32,9 +30,12 @@ def parse_arguments():
 
   parser.add_argument('--daq_mod', type=int, default=2,
                       help='Data acqusition mod (0=detector; 1=simulate; 2=test)')
-  parser.add_argument('--simulation_file', default="../data/hornby_4_x1_conv.h5",
+
+  parser.add_argument('--simulation_file', default="../data/tomo_00001.h5",
                         help='File name for mock data acquisition. '
                               'Default to shale data.')
+  parser.add_argument('--d_iteration', type=int, default=1,
+                      help='Number of iteration on simulated data.')
   parser.add_argument('--beg_sinogram', type=int, default=0,
                       help='Starting sinogram for reconstruction.')
   parser.add_argument('--num_sinograms', type=int, default=0,
@@ -43,24 +44,21 @@ def parse_arguments():
                       help='Number of columns per sinogram.')
   parser.add_argument('--num_sinogram_projections', type=int, default=1440,
                       help='Number of projections per sinogram.')
+
   return parser.parse_args()
 
 def synchronize_subs(context, subscriber_count, bind_address_rep):
-  print("Synching on: subscriber_count={}; bind_address_rep={}".format(
-    subscriber_count, bind_address_rep))
-  # Socket to receive signals
+  # Prepare synch. sockets
   sync_socket = context.socket(zmq.REP)
   sync_socket.bind(bind_address_rep)
   
-  # Get synchronization from subscribers
   counter = 0
+  print("Waiting {} subscriber(s) to synchronize...".format(subscriber_count))
   while counter < subscriber_count:
-    # wait for synchronization request
-    msg = sync_socket.recv()
-    # send synchronization reply
-    sync_socket.send(b'')
+    msg = sync_socket.recv() # wait for subscriber
+    sync_socket.send(b'') # reply ack
     counter += 1
-    print("Joined subscriber: {}/{}".format(counter, subscriber_count))
+    print("Subscriber joined: {}/{}".format(counter, subscriber_count))
 
 
 def test_daq(publisher_socket, builder,
@@ -85,75 +83,80 @@ def test_daq(publisher_socket, builder,
   return seq
 
 
-
 def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
-  import dxchange
-  import tomopy as tp
-  idata, flat, dark = dxchange.read_aps_32id(input_f)
+  print("Loading tomography data: {}".format(input_f))
+  t0=time.time()
+  idata, flat, dark, itheta = dxchange.read_aps_32id(input_f)
   idata = np.array(idata, dtype=np.dtype('uint16'))
   flat = np.array(flat, dtype=np.dtype('uint16'))
   dark = np.array(dark, dtype=np.dtype('uint16'))
-  itheta = tp.sim.project.angles(idata.shape[0])
+  #itheta = tp.sim.project.angles(idata.shape[0])
+  print("Projection dataset IO time={}; dataset shape={}; size={}; Theta length={};".format(
+                             time.time()-t0 , idata.shape, idata.size, len(itheta)))
   return idata, flat, dark, itheta
 
+
 def simulate_daq(publisher_socket, builder, input_f, 
-                      beg_sinogram=0, num_sinograms=0, seq=0, slp=0):
-  # Read image data and theta values
-  print("reading data")
-  t0=time.time()
+                      beg_sinogram=0, num_sinograms=0, seq=0, slp=0,
+                      iteration=1):
   idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
-  print("reading time={}".format(time.time()-t0))
 
-  # Send flat data
   start_index=0
-  if flat is not None:
-    for uniqueFlatId, flatId in zip(range(start_index, start_index+flat.shape[0]), 
-                                    range(flat.shape[0])):
+  time0 = time.time()
+  for it in range(iteration): # Simulate data acquisition
+    # Send flat data
+    print("Current iteration over dataset: {}/{}".format(it+1, iteration))
+    if flat is not None:
+      for uniqueFlatId, flatId in zip(range(start_index, 
+                               start_index+flat.shape[0]), range(flat.shape[0])):
+        builder.Reset()
+        dflat = flat[flatId]
+        #print("Publishing flat={}; shape={}".format(uniqueFlatId, flat.shape))
+        serializer = TraceSerializer.ImageSerializer(builder)
+        itype = serializer.ITypes.WhiteReset if flatId is 0 else serializer.ITypes.White
+        serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueFlatId, 
+                                          itype=itype,
+                                          rotation=0, seq=seq) #, center=10.)
+        seq+=1
+        publisher_socket.send(serialized_data)
+        time.sleep(slp)
+    start_index+=flat.shape[0]
+
+    # Send dark data
+    if dark is not None:
+      for uniqueDarkId, darkId in zip(range(start_index, start_index+dark.shape[0]), 
+                                      range(dark.shape[0])):
+        builder.Reset()
+        dflat = dark[flatId]
+        #print("Publishing dark={}; shape={}".format(uniqueDarkId, flat.shape))
+        serializer = TraceSerializer.ImageSerializer(builder)
+        itype = serializer.ITypes.DarkReset if darkId is 0 else serializer.ITypes.Dark
+        serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueDarkId, 
+                                          itype=itype,
+                                          rotation=0, seq=seq) #, center=10.)
+        seq+=1
+        publisher_socket.send(serialized_data)
+        time.sleep(slp)
+    start_index+=dark.shape[0]
+
+    # Send projection data
+    for uniqueId, projId, rotation in zip(range(start_index, start_index+idata.shape[0]), 
+                                          range(idata.shape[0]), itheta):
       builder.Reset()
-      dflat = flat[flatId]
-      print("Publishing flat={}; shape={}".format(uniqueFlatId, flat.shape))
+      proj =  idata[projId]
+      #print("Publishing projection={}; shape={}".format(uniqueId, proj.shape))
       serializer = TraceSerializer.ImageSerializer(builder)
-      itype = serializer.ITypes.WhiteReset if flatId is 0 else serializer.ITypes.White
-      serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueFlatId, 
+      itype = serializer.ITypes.Projection
+      serialized_data = serializer.serialize(image=proj, uniqueId=uniqueId,
                                         itype=itype,
-                                        rotation=0, seq=seq) #, center=10.)
+                                        rotation=rotation, seq=seq) #, center=10.)
       seq+=1
       publisher_socket.send(serialized_data)
       time.sleep(slp)
-
-  # Send dark data
-  start_index+=flat.shape[0]
-  if dark is not None:
-    for uniqueDarkId, darkId in zip(range(start_index, start_index+dark.shape[0]), 
-                                    range(dark.shape[0])):
-      builder.Reset()
-      dflat = dark[flatId]
-      print("Publishing dark={}; shape={}".format(uniqueDarkId, flat.shape))
-      serializer = TraceSerializer.ImageSerializer(builder)
-      itype = serializer.ITypes.DarkReset if darkId is 0 else serializer.ITypes.Dark
-      serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueDarkId, 
-                                        itype=itype,
-                                        rotation=0, seq=seq) #, center=10.)
-      seq+=1
-      publisher_socket.send(serialized_data)
-      time.sleep(slp)
-
-  # Send projection data
-  start_index+=dark.shape[0]
-  print(idata.shape, len(itheta), idata.size)
-  for uniqueId, projId, rotation in zip(range(start_index, start_index+idata.shape[0]), 
-                                        range(idata.shape[0]), itheta):
-    builder.Reset()
-    proj =  idata[projId]
-    print("Publishing={}; shape={}".format(uniqueId, proj.shape))
-    serializer = TraceSerializer.ImageSerializer(builder)
-    itype = serializer.ITypes.Projection
-    serialized_data = serializer.serialize(image=proj, uniqueId=uniqueId,
-                                      itype=itype,
-                                      rotation=rotation, seq=seq) #, center=10.)
-    seq+=1
-    publisher_socket.send(serialized_data)
-    time.sleep(slp)
+  time1 = time.time()
+  print("Transfer time={}".format(time1-time0))
+  tot_MiBs = (iteration*(idata.nbytes+flat.nbytes+dark.nbytes))/2**20
+  print("BW (MiB/s)={}".format(tot_MiBs/(time1-time0)))
 
   return seq
 
@@ -308,7 +311,8 @@ def main():
     print("simulating on a file")
     simulate_daq(publisher_socket=publisher_socket, 
               input_f=args.simulation_file, builder=builder,
-              beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms)
+              beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
+              iteration=args.d_iteration)
   elif args.daq_mod == 2: # Test data acquisition
     test_daq(publisher_socket=publisher_socket, builder=builder,
               num_sinograms=args.num_sinograms,                       # Y
