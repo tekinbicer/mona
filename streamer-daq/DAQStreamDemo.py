@@ -1,12 +1,13 @@
-import argparse
-import sys
-import numpy as np
-import zmq
-import TraceSerializer
-import time
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), './local'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../common'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../common/local'))
+import argparse
+import numpy as np
+import zmq
+import time
+import sys
+import TraceSerializer
 import flatbuffers
 import h5py as h5
 import dxchange
