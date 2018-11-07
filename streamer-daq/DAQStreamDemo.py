@@ -17,17 +17,15 @@ def parse_arguments():
   parser = argparse.ArgumentParser(
           description='Data Acquisition Process Simulator')
 
-  parser.add_argument('--bind_address_publisher', default="tcp://*:5560",
-                      help='Address to bind publisher.')
+  parser.add_argument('--publisher_addr', default="tcp://*:50000",
+                      help='Publisher addresss of data source process.')
   parser.add_argument('--publisher_hwm', type=int, default=0,
                       help='Sets high water mark value for publisher.')
 
-  parser.add_argument('--synchronize_subscribers', action='store_true',
+  parser.add_argument('--synch_addr', default=None,
                       help='Waits for all subscribers to join.')
-  parser.add_argument('--subscriber_count', type=int,
+  parser.add_argument('--synch_count', type=int, default=1,
                       help='Number of expected subscribers.')
-  parser.add_argument('--bind_address_rep', default=None,
-                      help='Address to bind REP socket (for synchronization)')
 
   parser.add_argument('--daq_mod', type=int, default=2,
                       help='Data acqusition mod (0=detector; 1=simulate; 2=test)')
@@ -91,8 +89,8 @@ def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
   idata = np.array(idata, dtype=np.dtype('uint16'))
   flat = np.array(flat, dtype=np.dtype('uint16'))
   dark = np.array(dark, dtype=np.dtype('uint16'))
-  print("Projection dataset IO time={}; dataset shape={}; size={}; Theta length={};".format(
-                             time.time()-t0 , idata.shape, idata.size, len(itheta)))
+  print("Projection dataset IO time={:.2f}; dataset shape={}; size={}; Theta shape={};".format(
+                             time.time()-t0 , idata.shape, idata.size, itheta.shape))
   return idata, flat, dark, itheta
 
 def serialize_dataset(builder, idata, flat, dark, itheta, seq=0):
@@ -147,7 +145,7 @@ def serialize_dataset(builder, idata, flat, dark, itheta, seq=0):
     time_ser += time.time()-t_ser0
     seq+=1
     data.append(serialized_data)
-  print("Serialization time={}".format(time_ser))
+  print("Serialization time={:.2f}".format(time_ser))
   return np.array(data)
   
 
@@ -158,7 +156,7 @@ def simulate_daq_serialized(publisher_socket, builder, input_f,
   idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
   serialized_data = serialize_dataset(builder, idata, flat, dark, itheta)
   del idata, flat, dark
-  print("data len={}; bytes={}; type={}; serialized_data_len={}".format(serialized_data.shape, serialized_data.nbytes, type(serialized_data[0]), len(serialized_data[0])))
+  #print("data shape={}; bytes={}; type={}; serialized_data_len={}".format(serialized_data.shape, serialized_data.nbytes, type(serialized_data[0]), len(serialized_data[0])))
 
   tot_transfer_size=0
   start_index=0
@@ -170,9 +168,11 @@ def simulate_daq_serialized(publisher_socket, builder, input_f,
       tot_transfer_size+=len(dchunk)
   time1 = time.time()
 
-  print("Transfer time={}".format(time1-time0))
-  tot_MiBs = (tot_transfer_size)/2**20
-  print("Total sent (MiB)={}; BW (MiB/s)={}".format(tot_MiBs, tot_MiBs/(time1-time0)))
+  elapsed_time = time1-time0
+  tot_MiBs = (tot_transfer_size*1.)/2**20
+  nproj = iteration*len(serialized_data)
+  print("Sent number of projections: {}; Total size (MiB): {:.2f}; Elapsed time (s): {:.2f}".format(nproj, tot_MiBs, elapsed_time))
+  print("Rate (MiB/s): {:.2f}; (msg/s): {:.2f}".format(tot_MiBs/elapsed_time, nproj/elapsed_time))
 
   return seq
 
@@ -242,7 +242,7 @@ def simulate_daq(publisher_socket, builder, input_f,
       publisher_socket.send(serialized_data, copy=False)
       #time.sleep(slp)
   time1 = time.time()
-  print("Transfer time={}".format(time1-time0))
+  print("time={}".format(time1-time0))
   tot_MiBs = (iteration*(idata.nbytes+flat.nbytes+dark.nbytes))/2**20
   print("BW (MiB/s)={}".format(tot_MiBs/(time1-time0)))
   print("Serialization time={}".format(time_ser))
@@ -367,7 +367,6 @@ class TImageTransfer:
     return self
 
 
-    
 
 def main():
   args = parse_arguments()
@@ -381,11 +380,11 @@ def main():
   # Publisher setup
   publisher_socket = context.socket(zmq.PUB)
   publisher_socket.set_hwm(args.publisher_hwm)
-  publisher_socket.bind(args.bind_address_publisher)
+  publisher_socket.bind(args.publisher_addr)
 
   # 1. Synchronize/handshake with remote
-  if args.synchronize_subscribers:
-    synchronize_subs(context, args.subscriber_count, args.bind_address_rep)
+  if args.synch_addr is not None:
+    synchronize_subs(context, args.synch_count, args.synch_addr)
 
   # 2. Transfer data
   time0 = time.time()
@@ -397,7 +396,7 @@ def main():
       tdet.start_monitor()  # Infinite loop
 
   elif args.daq_mod == 1: # Simulate data acquisition with a file
-    print("simulating on a file")
+    print("Simulating data acquisition on file: {}; iteration: {}".format(args.simulation_file, args.d_iteration))
     simulate_daq_serialized(publisher_socket=publisher_socket, 
               input_f=args.simulation_file, builder=builder,
               beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
@@ -416,7 +415,7 @@ def main():
 
   publisher_socket.send("end_data".encode())
   time1 = time.time()
-  print("Done sending; Total time={}".format(time1-time0))
+  print("Total time (s): {:.2f}".format(time1-time0))
 
 
 if __name__ == '__main__':
