@@ -90,25 +90,107 @@ def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
   idata = np.array(idata, dtype=np.dtype('uint16'))
   flat = np.array(flat, dtype=np.dtype('uint16'))
   dark = np.array(dark, dtype=np.dtype('uint16'))
-  #itheta = tp.sim.project.angles(idata.shape[0])
   print("Projection dataset IO time={}; dataset shape={}; size={}; Theta length={};".format(
                              time.time()-t0 , idata.shape, idata.size, len(itheta)))
   return idata, flat, dark, itheta
+
+def serialize_dataset(builder, idata, flat, dark, itheta, seq=0):
+  data = []
+  start_index=0
+  time_ser=0.
+  print("Starting serialization")
+  if flat is not None:
+    for uniqueFlatId, flatId in zip(range(start_index, 
+                             start_index+flat.shape[0]), range(flat.shape[0])):
+      t_ser0 =  time.time()
+      builder.Reset()
+      dflat = flat[flatId]
+      serializer = TraceSerializer.ImageSerializer(builder)
+      itype = serializer.ITypes.WhiteReset if flatId is 0 else serializer.ITypes.White
+      serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueFlatId, 
+                                        itype=itype,
+                                        rotation=0, seq=seq) #, center=10.)
+      data.append(serialized_data)
+      time_ser += time.time()-t_ser0
+      seq+=1
+  start_index+=flat.shape[0]
+
+  # dark data
+  if dark is not None:
+    for uniqueDarkId, darkId in zip(range(start_index, start_index+dark.shape[0]), 
+                                    range(dark.shape[0])):
+      t_ser0 =  time.time()
+      builder.Reset()
+      dflat = dark[flatId]
+      serializer = TraceSerializer.ImageSerializer(builder)
+      itype = serializer.ITypes.DarkReset if darkId is 0 else serializer.ITypes.Dark
+      serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueDarkId, 
+                                        itype=itype,
+                                        rotation=0, seq=seq) #, center=10.)
+      time_ser += time.time()-t_ser0
+      seq+=1
+      data.append(serialized_data)
+  start_index+=dark.shape[0]
+
+  # projection data
+  for uniqueId, projId, rotation in zip(range(start_index, start_index+idata.shape[0]), 
+                                        range(idata.shape[0]), itheta):
+    t_ser0 =  time.time()
+    builder.Reset()
+    proj =  idata[projId]
+    serializer = TraceSerializer.ImageSerializer(builder)
+    itype = serializer.ITypes.Projection
+    serialized_data = serializer.serialize(image=proj, uniqueId=uniqueId,
+                                      itype=itype,
+                                      rotation=rotation, seq=seq) #, center=10.)
+    time_ser += time.time()-t_ser0
+    seq+=1
+    data.append(serialized_data)
+  print("Serialization time={}".format(time_ser))
+  return np.array(data)
+  
+
+def simulate_daq_serialized(publisher_socket, builder, input_f, 
+                      beg_sinogram=0, num_sinograms=0, seq=0, slp=0,
+                      iteration=1):
+
+  idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
+  serialized_data = serialize_dataset(builder, idata, flat, dark, itheta)
+  del idata, flat, dark
+  print("data len={}; bytes={}; type={}; serialized_data_len={}".format(serialized_data.shape, serialized_data.nbytes, type(serialized_data[0]), len(serialized_data[0])))
+
+  tot_transfer_size=0
+  start_index=0
+  time0 = time.time()
+  for it in range(iteration): # Simulate data acquisition
+    print("Current iteration over dataset: {}/{}".format(it+1, iteration))
+    for dchunk in serialized_data:
+      publisher_socket.send(dchunk, copy=False)
+      tot_transfer_size+=len(dchunk)
+  time1 = time.time()
+
+  print("Transfer time={}".format(time1-time0))
+  tot_MiBs = (tot_transfer_size)/2**20
+  print("Total sent (MiB)={}; BW (MiB/s)={}".format(tot_MiBs, tot_MiBs/(time1-time0)))
+
+  return seq
+
 
 
 def simulate_daq(publisher_socket, builder, input_f, 
                       beg_sinogram=0, num_sinograms=0, seq=0, slp=0,
                       iteration=1):
-  idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
 
   start_index=0
   time0 = time.time()
+  time_ser = 0.
   for it in range(iteration): # Simulate data acquisition
     # Send flat data
     print("Current iteration over dataset: {}/{}".format(it+1, iteration))
     if flat is not None:
       for uniqueFlatId, flatId in zip(range(start_index, 
                                start_index+flat.shape[0]), range(flat.shape[0])):
+        t_ser0 =  time.time()
         builder.Reset()
         dflat = flat[flatId]
         #print("Publishing flat={}; shape={}".format(uniqueFlatId, flat.shape))
@@ -117,15 +199,17 @@ def simulate_daq(publisher_socket, builder, input_f,
         serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueFlatId, 
                                           itype=itype,
                                           rotation=0, seq=seq) #, center=10.)
+        time_ser += time.time()-t_ser0
         seq+=1
-        publisher_socket.send(serialized_data)
-        time.sleep(slp)
+        publisher_socket.send(serialized_data, copy=False)
+        #time.sleep(slp)
     start_index+=flat.shape[0]
 
     # Send dark data
     if dark is not None:
       for uniqueDarkId, darkId in zip(range(start_index, start_index+dark.shape[0]), 
                                       range(dark.shape[0])):
+        t_ser0 =  time.time()
         builder.Reset()
         dflat = dark[flatId]
         #print("Publishing dark={}; shape={}".format(uniqueDarkId, flat.shape))
@@ -134,14 +218,16 @@ def simulate_daq(publisher_socket, builder, input_f,
         serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueDarkId, 
                                           itype=itype,
                                           rotation=0, seq=seq) #, center=10.)
+        time_ser += time.time()-t_ser0
         seq+=1
-        publisher_socket.send(serialized_data)
-        time.sleep(slp)
+        publisher_socket.send(serialized_data, copy=False)
+        #time.sleep(slp)
     start_index+=dark.shape[0]
 
     # Send projection data
     for uniqueId, projId, rotation in zip(range(start_index, start_index+idata.shape[0]), 
                                           range(idata.shape[0]), itheta):
+      t_ser0 =  time.time()
       builder.Reset()
       proj =  idata[projId]
       #print("Publishing projection={}; shape={}".format(uniqueId, proj.shape))
@@ -150,13 +236,15 @@ def simulate_daq(publisher_socket, builder, input_f,
       serialized_data = serializer.serialize(image=proj, uniqueId=uniqueId,
                                         itype=itype,
                                         rotation=rotation, seq=seq) #, center=10.)
+      time_ser += time.time()-t_ser0
       seq+=1
-      publisher_socket.send(serialized_data)
-      time.sleep(slp)
+      publisher_socket.send(serialized_data, copy=False)
+      #time.sleep(slp)
   time1 = time.time()
   print("Transfer time={}".format(time1-time0))
   tot_MiBs = (iteration*(idata.nbytes+flat.nbytes+dark.nbytes))/2**20
   print("BW (MiB/s)={}".format(tot_MiBs/(time1-time0)))
+  print("Serialization time={}".format(time_ser))
 
   return seq
 
@@ -287,7 +375,7 @@ def main():
   builder = flatbuffers.Builder(0)
 
   # Setup zmq context
-  context = zmq.Context()
+  context = zmq.Context()#(io_threads=2)
 
   # Publisher setup
   publisher_socket = context.socket(zmq.PUB)
@@ -309,10 +397,14 @@ def main():
 
   elif args.daq_mod == 1: # Simulate data acquisition with a file
     print("simulating on a file")
-    simulate_daq(publisher_socket=publisher_socket, 
+    simulate_daq_serialized(publisher_socket=publisher_socket, 
               input_f=args.simulation_file, builder=builder,
               beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
               iteration=args.d_iteration)
+    #simulate_daq(publisher_socket=publisher_socket, 
+    #          input_f=args.simulation_file, builder=builder,
+    #          beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
+    #          iteration=args.d_iteration)
   elif args.daq_mod == 2: # Test data acquisition
     test_daq(publisher_socket=publisher_socket, builder=builder,
               num_sinograms=args.num_sinograms,                       # Y
