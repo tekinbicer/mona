@@ -1,0 +1,2 @@
+python DAQStreamDemo.py --daq_mod 1 --simulation_file /dev/shm/tomo_00001.h5 --synchronize_subscribers --subscriber_count 1 --bind_address_rep tcp://10.1.1.20:50001 --d_iteration 5 --bind_address_publisher tcp://*:50000
+python DAQStreamDemo.py --daq_mod 1 --simulation_file /dev/shm/tomo_00001.h5 --publisher_addr tcp://10.1.1.20:50000 --synch_addr tcp://10.1.1.20:50001 --synch_count 1 --d_iteration 20
