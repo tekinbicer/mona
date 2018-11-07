@@ -1,1 +1,1 @@
-python DistStream.py --synchronize_subscriber --publisher_address tcp://164.54.113.99:5560 --publisher_rep_address tcp://164.54.113.99:5561
+python ModDistStreamPubDemo.py --synchronize_subscriber --publisher_address tcp://10.1.1.20:5560 --publisher_rep_address tcp://10.1.1.20:50000 --disable_tmq --local_publisher_address tcp://*:50001 --uint16_to_float32

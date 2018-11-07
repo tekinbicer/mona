@@ -1,13 +1,12 @@
-#!/home/bicer/.conda/envs/py36/bin/python
-
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '../common'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../common/local'))
 import argparse
 import numpy as np
 import zmq
 import time
-import os
-import sys
 import math
-sys.path.append(os.path.join(os.path.dirname(__file__), './local'))
 import flatbuffers
 import TraceSerializer
 import tomopy as tp
@@ -15,15 +14,22 @@ import tracemq as tmq
 
 
 def parse_arguments():
-  parser = argparse.ArgumentParser( description='Data Acquisition Process')
+  parser = argparse.ArgumentParser( description='Data Distributor Process')
   parser.add_argument('--synchronize_subscriber', action='store_true',
       help='Synchronizes this subscriber to publisher (publisher should wait for subscriptions)')
-  parser.add_argument('--subscriber_hwm', type=int, default=10240, 
+  parser.add_argument('--publisher_rep_address',
+      help='Remote publisher REP address for synchronization')
+  parser.add_argument('--subscriber_hwm', type=int, default=0, 
       help='Sets high water mark value for this subscriber.')
   parser.add_argument('--publisher_address', default=None,
       help='Remote publisher address')
-  parser.add_argument('--publisher_rep_address',
-      help='Remote publisher REP address for synchronization')
+
+  # Publisher for the others
+  parser.add_argument('--local_publisher_address',
+      help='Local publisher for normalized data')
+  parser.add_argument('--publish_normalized',  action='store_true', default=False,
+      help='Local publisher for normalized data')
+
 
   # TQ communication
   parser.add_argument('--bindip', default=None, help='IP address to bind tmq)')
@@ -36,29 +42,25 @@ def parse_arguments():
   parser.add_argument('--num_columns', type=int,
                           help='Number of columns (cols)')
 
-  parser.add_argument('--degree_to_radian', action='store_true',
+  parser.add_argument('--degree_to_radian', action='store_true', default=False,
               help='Converts rotation information to radian.')
-  parser.add_argument('--mlog', action='store_true',
+  parser.add_argument('--mlog', action='store_true', default=False,
               help='Takes the minus log of projection data (projection data is divided by 50000 also).')
-  parser.add_argument('--uint16_to_float32', action='store_true',
+  parser.add_argument('--uint16_to_float32', action='store_true', default=False,
               help='Converts uint16 image byte sequence to float32.')
-  parser.add_argument('--uint8_to_float32', action='store_true',
+  parser.add_argument('--uint8_to_float32', action='store_true', default=False,
               help='Converts uint8 image byte sequence to float32.')
-  parser.add_argument('--normalize', action='store_true',
+  parser.add_argument('--normalize', action='store_true', default=False,
               help='Normalizes incoming projection data with previously received dark and flat field.')
-  parser.add_argument('--remove_invalids', action='store_true',
+  parser.add_argument('--remove_invalids', action='store_true', default=False,
               help='Removes invalid measurements from incoming projections, i.e. negatives, nans and infs.')
-  parser.add_argument('--remove_stripes', action='store_true',
+  parser.add_argument('--remove_stripes', action='store_true', default=False,
               help='Removes stripes using fourier-wavelet method (in tomopy).')
   parser.add_argument('--disable_tmq', action='store_true', default=False,
               help='Disable tmq for testing.')
+  parser.add_argument('--skip_serialize', action='store_true', default=False,
+              help='Disable deserialization of the incoming messages. Only receives data from remote data source, since deserialization is required for other operations.')
 
-  parser.add_argument('--center_messup', type=float,
-                          help='Rotation center is set to center-(given value)'
-                          ' for initial 750 projections, then fixed.', default=0)
-  parser.add_argument('--center_messup_after_receiving', type=float,
-                          help='Messup rotation center after receiving '
-                          ' given number of projections.', default=0)
 
   return parser.parse_args()
 
@@ -91,6 +93,11 @@ def main():
   subscriber_socket.connect(args.publisher_address)
   subscriber_socket.setsockopt(zmq.SUBSCRIBE, b'')
 
+  # Local publisher socket
+  print(args.local_publisher_address)
+  publisher_socket = context.socket(zmq.PUB)
+  publisher_socket.bind(args.local_publisher_address)
+
   if args.synchronize_subscriber:
     synchronize_subs(context, args.publisher_rep_address)
 
@@ -110,44 +117,36 @@ def main():
   time0 = time.time()
   while True:
     msg = subscriber_socket.recv()
+    total_received += 1
+    total_size += len(msg)
     if msg == b"end_data": break # End of data acquisition
+
     # Deserialize msg to image
+    if args.skip_serialize: continue
     read_image = serializer.deserialize(serialized_image=msg)
     serializer.info(read_image) # print image information
     # Local checks
     seq=read_image.Seq()
-    if seq!=total_received: 
-      print("Wrong sequence number: {} != {}".format(seq, total_received))
+    #if seq!=total_received: 
+    #  print("Wrong sequence number: {} != {}".format(seq, total_received))
 
     # Push image to workers (REQ/REP)
+
     my_image_np = read_image.TdataAsNumpy()
-    # XXX redundant if else below, fix it
-    if args.uint16_to_float32:
+    if args.uint16_to_float32 or args.uint8_to_float32:
       my_image_np.dtype = np.uint16
-      sub = np.array(my_image_np, dtype="float32")
-    elif args.uint8_to_float32:
-      my_image_np.dtype = np.uint8
       sub = np.array(my_image_np, dtype="float32")
     else: sub = my_image_np
     sub = sub.reshape((1, read_image.Dims().Y(), read_image.Dims().X()))
+
     if args.num_sinograms is not None:
       sub = sub[:, args.beg_sinogram:args.beg_sinogram+args.num_sinograms, :]
 
 
     # If incoming data is projection
-    center=read_image.Center()
-    if read_image.Itype() is serializer.ITypes.Projection:
+    if (read_image.Itype() is serializer.ITypes.Projection) and (total_received%5==0):
       rotation=read_image.Rotation()
-      if args.degree_to_radian: 
-        rotation = rotation*math.pi/180.
-            
-      #XXX Something seems to be wrong while passing the center to tracemq
-      if args.center_messup>0.:
-        if total_received<args.center_messup_after_receiving:
-          print("setting center {} --> {}".format(read_image.Center(), 
-                                            read_image.Center()-args.center_messup))
-          center=read_image.Center()-args.center_messup
-      else: center=read_image.Center()
+      if args.degree_to_radian: rotation = rotation*math.pi/180.
 
       # Tomopy operations expect 3D data, reshape incoming projections.
       if args.normalize: 
@@ -173,7 +172,18 @@ def main():
 
       if not args.disable_tmq:
         tmq.push_image(sub, args.num_sinograms, ncols, rotation, 
-                        read_image.UniqueId(), center)
+                        read_image.UniqueId(), read_image.Center())
+
+      if args.publish_normalized:
+        builder.Reset()
+        serializer = TraceSerializer.ImageSerializer(builder)
+        mub = np.reshape(sub,(1, read_image.Dims().Y(), read_image.Dims().X()))
+        serialized_data = serializer.serialize(image=mub, uniqueId=0, rotation=0,
+                    itype=serializer.ITypes.Projection)
+        print("Publishing:{}".format(read_image.UniqueId()))
+        #sub = tp.normalize(sub, flat=white_imgs, dark=dark_imgs)
+        publisher_socket.send(serialized_data)
+
 
     # If incoming data is white field
     if read_image.Itype() is serializer.ITypes.White: 
@@ -202,8 +212,6 @@ def main():
       tot_dark_imgs += 1
 
 
-    total_received += 1
-    total_size += len(msg)
   time1 = time.time()
     
   # Profile information
