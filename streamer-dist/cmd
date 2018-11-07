@@ -1,1 +1,2 @@
-python ModDistStreamPubDemo.py --synchronize_subscriber --publisher_address tcp://10.1.1.20:5560 --publisher_rep_address tcp://10.1.1.20:50000 --disable_tmq --local_publisher_address tcp://*:50001 --uint16_to_float32
+python ModDistStreamPubDemo.py --data_source_addr tcp://10.1.1.20:50000 --data_source_synch_addr tcp://10.1.1.20:50001 --uint16_to_float32
+python ModDistStreamPubDemo.py --data_source_addr tcp://10.1.1.20:50000 --data_source_synch_addr tcp://10.1.1.20:50001 --skip_serialize
