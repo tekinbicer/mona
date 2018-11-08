@@ -18,12 +18,17 @@ def parse_arguments():
   parser = argparse.ArgumentParser( description='Data Acquisition Process')
   parser.add_argument('--synchronize_subscriber', action='store_true',
       help='Synchronizes this subscriber to publisher (publisher should wait for subscriptions)')
-  parser.add_argument('--subscriber_hwm', type=int, default=10240, 
+  parser.add_argument('--subscriber_hwm', type=int, default=0, 
       help='Sets high water mark value for this subscriber.')
   parser.add_argument('--publisher_address', default=None,
       help='Remote publisher address')
   parser.add_argument('--publisher_rep_address',
       help='Remote publisher REP address for synchronization')
+
+  parser.add_argument('--local_publisher_address',
+      help='Local publisher for normalized data')
+  parser.add_argument('--publish_normalized',  action='store_true',
+      help='Local publisher for normalized data')
 
   # TQ communication
   parser.add_argument('--bindip', default=None, help='IP address to bind tmq)')
@@ -52,13 +57,6 @@ def parse_arguments():
               help='Removes stripes using fourier-wavelet method (in tomopy).')
   parser.add_argument('--disable_tmq', action='store_true', default=False,
               help='Disable tmq for testing.')
-
-  parser.add_argument('--center_messup', type=float,
-                          help='Rotation center is set to center-(given value)'
-                          ' for initial 750 projections, then fixed.', default=0)
-  parser.add_argument('--center_messup_after_receiving', type=float,
-                          help='Messup rotation center after receiving '
-                          ' given number of projections.', default=0)
 
   return parser.parse_args()
 
@@ -91,6 +89,11 @@ def main():
   subscriber_socket.connect(args.publisher_address)
   subscriber_socket.setsockopt(zmq.SUBSCRIBE, b'')
 
+  # Local publisher socket
+  print(args.local_publisher_address)
+  publisher_socket = context.socket(zmq.PUB)
+  publisher_socket.bind(args.local_publisher_address)
+
   if args.synchronize_subscriber:
     synchronize_subs(context, args.publisher_rep_address)
 
@@ -116,8 +119,8 @@ def main():
     serializer.info(read_image) # print image information
     # Local checks
     seq=read_image.Seq()
-    if seq!=total_received: 
-      print("Wrong sequence number: {} != {}".format(seq, total_received))
+    #if seq!=total_received: 
+    #  print("Wrong sequence number: {} != {}".format(seq, total_received))
 
     # Push image to workers (REQ/REP)
     my_image_np = read_image.TdataAsNumpy()
@@ -135,19 +138,9 @@ def main():
 
 
     # If incoming data is projection
-    center=read_image.Center()
-    if read_image.Itype() is serializer.ITypes.Projection:
+    if (read_image.Itype() is serializer.ITypes.Projection) and (total_received%5==0):
       rotation=read_image.Rotation()
-      if args.degree_to_radian: 
-        rotation = rotation*math.pi/180.
-            
-      #XXX Something seems to be wrong while passing the center to tracemq
-      if args.center_messup>0.:
-        if total_received<args.center_messup_after_receiving:
-          print("setting center {} --> {}".format(read_image.Center(), 
-                                            read_image.Center()-args.center_messup))
-          center=read_image.Center()-args.center_messup
-      else: center=read_image.Center()
+      if args.degree_to_radian: rotation = rotation*math.pi/180.
 
       # Tomopy operations expect 3D data, reshape incoming projections.
       if args.normalize: 
@@ -173,7 +166,18 @@ def main():
 
       if not args.disable_tmq:
         tmq.push_image(sub, args.num_sinograms, ncols, rotation, 
-                        read_image.UniqueId(), center)
+                        read_image.UniqueId(), read_image.Center())
+
+      if args.publish_normalized:
+        builder.Reset()
+        serializer = TraceSerializer.ImageSerializer(builder)
+        mub = np.reshape(sub,(1, read_image.Dims().Y(), read_image.Dims().X()))
+        serialized_data = serializer.serialize(image=mub, uniqueId=0, rotation=0,
+                    itype=serializer.ITypes.Projection)
+        print("Publishing:{}".format(read_image.UniqueId()))
+        #sub = tp.normalize(sub, flat=white_imgs, dark=dark_imgs)
+        publisher_socket.send(serialized_data)
+
 
     # If incoming data is white field
     if read_image.Itype() is serializer.ITypes.White: 

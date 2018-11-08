@@ -9,9 +9,10 @@ import time
 import sys
 import os
 import pvaccess
+import math
 sys.path.append(os.path.join(os.path.dirname(__file__), './local'))
 import flatbuffers
-import dquality
+from dquality.handler_mona import Handler
 
 def parse_arguments():
   parser = argparse.ArgumentParser(
@@ -43,6 +44,9 @@ def parse_arguments():
                       help='Number of columns per sinogram.')
   parser.add_argument('--num_sinogram_projections', type=int, default=1440,
                       help='Number of projections per sinogram.')
+  parser.add_argument('--nprojs_per_subset', default=0, type=int,
+                        help='Number of projections per subset. '
+                              'Used when simulation file is given, and data acquisition is interlaced.')
   return parser.parse_args()
 
 def synchronize_subs(context, subscriber_count, bind_address_rep):
@@ -86,22 +90,70 @@ def test_daq(publisher_socket, builder,
 
 
 
-def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
+def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0, nprojs_per_subset=0):
   import dxchange
   import tomopy as tp
-  idata, flat, dark = dxchange.read_aps_32id(input_f)
-  idata = np.array(idata, dtype=np.dtype('uint16'))
-  flat = np.array(flat, dtype=np.dtype('uint16'))
-  dark = np.array(dark, dtype=np.dtype('uint16'))
-  itheta = tp.sim.project.angles(idata.shape[0])
+  idata, flat, dark, itheta = dxchange.read_aps_32id(input_f)
+  idata = np.array(idata, dtype=np.dtype('uint8'))
+  flat = np.array(flat, dtype=np.dtype('uint8'))
+  dark = np.array(dark, dtype=np.dtype('uint8'))
+  #itheta = tp.sim.project.angles(idata.shape[0])
+
+
+  if nprojs_per_subset>0:
+    #XXX for now return already organized data
+    print("loading data")
+    idata=np.load("./local.idata.96.npy")
+    itheta=np.load("./local.itheta.96.npy")
+    dark=np.load("./local.dark.96.npy")
+    flat=np.load("./local.flat.96.npy")
+    print("done")
+    return idata, flat, dark, itheta
+
+
+    tot_nprojs = idata.shape[0]
+    nsubsets= np.int32(math.ceil(1.*tot_nprojs/nprojs_per_subset))
+    dlists = []
+    tlists = []
+    for i in range(nsubsets): 
+      dlists.append([])
+      tlists.append([])
+
+    print("Number of subsets={}; number of projection per subset={}".format(nsubsets, nprojs_per_subset))
+
+    t0=time.time()
+    for i in range(idata.shape[0]):
+      dlists[i%nsubsets].extend(idata[i,:,:].flatten().tolist())
+      tlists[i%nsubsets].extend(itheta[i].flatten().tolist())
+    print("Time to reorganize={}".format(time.time()-t0))
+    
+    t0=time.time()
+    alists=[]
+    for i in range(len(dlists)): alists.extend(dlists[i])
+    idata = np.array(alists, dtype=np.uint8).reshape(idata.shape)
+    alists=[]
+    for i in range(len(tlists)): alists.extend(tlists[i])
+    itheta = np.array(alists, dtype=np.float32).reshape(itheta.shape)
+    print(itheta)
+    print("Time to reshape={}".format(time.time()-t0))
+
+    #XXX for now return already organized data
+    #print("saving data")
+    #np.save("./local.idata.96", idata)
+    #np.save("./local.itheta.96", itheta)
+    #np.save("./local.dark.96", dark)
+    #np.save("./local.flat.96", flat)
+    #print("done")
+
+
   return idata, flat, dark, itheta
 
 def simulate_daq(publisher_socket, builder, input_f, 
-                      beg_sinogram=0, num_sinograms=0, seq=0, slp=0):
+                      beg_sinogram=0, num_sinograms=0, seq=0, slp=0.15, nprojs_per_subset=0):
   # Read image data and theta values
   print("reading data")
   t0=time.time()
-  idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
+  idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms, nprojs_per_subset)
   print("reading time={}".format(time.time()-t0))
 
   # Send flat data
@@ -145,7 +197,7 @@ def simulate_daq(publisher_socket, builder, input_f,
                                         range(idata.shape[0]), itheta):
     builder.Reset()
     proj =  idata[projId]
-    print("Publishing={}; shape={}".format(uniqueId, proj.shape))
+    print("Publishing={}; shape={}; rotation={}".format(uniqueId, proj.shape, rotation))
     serializer = TraceSerializer.ImageSerializer(builder)
     itype = serializer.ITypes.Projection
     serialized_data = serializer.serialize(image=proj, uniqueId=uniqueId,
@@ -190,6 +242,7 @@ class TImageTransfer:
     self.flat_counter=0
     self.dark_counter=0
     self.sequence=0
+    self.tot_lost=0
     print(self.dims)
     if self.num_sinograms>0:
       if (self.beg_sinogram<0) or (self.beg_sinogram+self.num_sinograms>self.dims[0]): 
@@ -199,6 +252,8 @@ class TImageTransfer:
       self.end_index = self.beg_sinogram*self.dims[1] + self.num_sinograms*self.dims[1]
     self.pv_channel.subscribe('push_image_data', self.push_image_data)
 
+    # Setup verifier configurations
+    self.ver = Handler('/home/beams/USER2BMB/.dquality/dqconfig.ini')
     return self
 
 
@@ -220,6 +275,7 @@ class TImageTransfer:
     itype=data["attribute"][self.last_save_dest]["value"][0]["value"]
     if itype == "/exchange/data":
       print("Projection data: {}".format(uniqueId))
+      data_type = 'data'
       itype=serializer.ITypes.Projection
       if self.sequence > 1:
         self.sequence=0
@@ -227,30 +283,39 @@ class TImageTransfer:
         self.dark_count=self.dark_counter
         self.flat_counter=0
         self.dark_counter=0
+        self.tot_lost=0
     if itype == "/exchange/data_white":
       print("White field: {}".format(uniqueId))
+      data_type = 'data_white'
       itype=serializer.ITypes.White
       self.sequence+=1; 
       self.flat_counter+=1
     if itype == "/exchange/data_dark":
       print("Dark field: {}".format(uniqueId))
+      data_type = 'data_dark'
       itype=serializer.ITypes.Dark
       self.sequence+=1; 
       self.dark_counter+=1
 
+    #failed = self.ver.handle_data(uniqueId, img, data_type)
+    #print ('Verification done: {}'.format(failed))
+
     # XXX with flat/dark field data uniquId is not a correct value any more
     theta = ((start_position + (uniqueId-(self.flat_count+self.dark_count)))*scan_delta) % 360.0
-    diff = self.lastImageId-(uniqueId-1)
+    diff = (uniqueId-1)-self.lastImageId
+    if diff > 0: self.tot_lost += diff
     self.lastImageId = uniqueId
-    print("UniqueID={}, Rotation Angle={}; Id Check={}; iType={}; scandelta={}; #flat={}; #dark={}, startposition={}".format(
-                                    uniqueId, theta, diff, itype, scan_delta, self.flat_count, self.dark_count, start_position))
-    self.mlists.append([uniqueId, self.flat_count, self.dark_count, scan_delta, start_position, theta])
+    print("UniqueID={}, Rotation Angle={}; Id Check={}; iType={}; scandelta={}; #flat={}; #dark={}, startposition={}, total_lost={}".format(
+          uniqueId, theta, diff, itype, scan_delta, self.flat_count, 
+          self.dark_count, start_position, self.tot_lost))
+    self.mlists.append([uniqueId, self.flat_count, self.dark_count, 
+                        scan_delta, start_position, theta])
 
     if self.num_sinograms!=0:
       img = img[self.beg_index : self.end_index]
       img = img.reshape((self.num_sinograms, self.dims[1]))
     else: img = img.reshape(self.dims)
-    print("img.shape={}; img={}".format(img.shape, img))
+    #print("img.shape={}; img={}".format(img.shape, img))
 
     serialized_data = serializer.serialize(image=img, uniqueId=uniqueId,
                                 itype=itype,
@@ -289,6 +354,7 @@ def main():
   # Publisher setup
   publisher_socket = context.socket(zmq.PUB)
   publisher_socket.set_hwm(args.publisher_hwm)
+  publisher_socket.setsockopt(zmq.SNDHWM, args.publisher_hwm)
   publisher_socket.bind(args.bind_address_publisher)
 
   # 1. Synchronize/handshake with remote
@@ -308,7 +374,8 @@ def main():
     print("simulating on a file")
     simulate_daq(publisher_socket=publisher_socket, 
               input_f=args.simulation_file, builder=builder,
-              beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms)
+              beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
+              nprojs_per_subset=args.nprojs_per_subset)
   elif args.daq_mod == 2: # Test data acquisition
     test_daq(publisher_socket=publisher_socket, builder=builder,
               num_sinograms=args.num_sinograms,                       # Y
