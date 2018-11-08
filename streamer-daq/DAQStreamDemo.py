@@ -35,6 +35,8 @@ def parse_arguments():
                               'Default to shale data.')
   parser.add_argument('--d_iteration', type=int, default=1,
                       help='Number of iteration on simulated data.')
+  parser.add_argument('--iteration_sleep', type=float, default=0,
+                      help='Delay data publishing for each iteration.')
   parser.add_argument('--beg_sinogram', type=int, default=0,
                       help='Starting sinogram for reconstruction.')
   parser.add_argument('--num_sinograms', type=int, default=0,
@@ -166,6 +168,7 @@ def simulate_daq_serialized(publisher_socket, builder, input_f,
     for dchunk in serialized_data:
       publisher_socket.send(dchunk, copy=False)
       tot_transfer_size+=len(dchunk)
+    time.sleep(slp)
   time1 = time.time()
 
   elapsed_time = time1-time0
@@ -400,7 +403,8 @@ def main():
     simulate_daq_serialized(publisher_socket=publisher_socket, 
               input_f=args.simulation_file, builder=builder,
               beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
-              iteration=args.d_iteration)
+              iteration=args.d_iteration,
+              slp=args.iteration_sleep)
     #simulate_daq(publisher_socket=publisher_socket, 
     #          input_f=args.simulation_file, builder=builder,
     #          beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
@@ -409,7 +413,8 @@ def main():
     test_daq(publisher_socket=publisher_socket, builder=builder,
               num_sinograms=args.num_sinograms,                       # Y
               num_sinogram_columns=args.num_sinogram_columns,         # X 
-              num_sinogram_projections=args.num_sinogram_projections) # Z
+              num_sinogram_projections=args.num_sinogram_projections, #Z
+              slp=args.iteration_sleep)
   else:
     print("Unknown mode: {}".format(args.daq_mod));
 
