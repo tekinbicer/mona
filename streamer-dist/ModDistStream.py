@@ -119,13 +119,10 @@ def main():
       # Tomopy operations expect 3D data, reshape incoming projections.
       sub = np.reshape(sub, (1, sub.shape[0], sub.shape[1]))
       if args.normalize: sub = tp.normalize(sub, flat, dark) # XXX note flat/dark fields need to be the corresponding sinograms
-
       if args.remove_stripe: sub = tp.remove_stripe_fw(sub, level=7, wname='sym16', sigma=1, pad=True)
-
       if args.mlog: sub = -np.log(sub)
-
       if args.remove_nan:
-        sub = tp.remove_nan(sub, val=0.0)
+        sub = tp.remove_nan(sub, val=0.00)
         sub = tp.remove_neg(sub, val=0.00)
         sub[np.where(sub == np.inf)] = 0.00
 
