@@ -1,2 +1,5 @@
-python ModDistStreamPubDemo.py --data_source_addr tcp://10.1.1.20:50000 --data_source_synch_addr tcp://10.1.1.20:50001 --uint16_to_float32
-python ModDistStreamPubDemo.py --data_source_addr tcp://10.1.1.20:50000 --data_source_synch_addr tcp://10.1.1.20:50001 --skip_serialize
+For publishing w/o normalized data
+python ModDistStreamPubDemo.py --data_source_addr tcp://10.1.1.20:50000 --skip_serialize
+
+For publishing normalized data:
+python ModDistStreamPubDemo.py --data_source_addr tcp://10.1.2.10:50000 --data_source_synch_addr tcp://10.1.2.10:50001 --my_distributor_addr tcp://127.0.0.1:51000 --beg_sinogram 850 --num_sinograms 1 --num_columns 2048 --mlog  --uint16_to_float32 --normalize --remove_invalids

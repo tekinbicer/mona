@@ -79,10 +79,11 @@ def main():
 
   # TQM setup
   if args.my_distributor_addr is not None:
-    addr_split = re.split("^://|:", args.my_distributor_addr)
+    addr_split = re.split("://|:", args.my_distributor_addr)
     tmq.init_tmq()
     # Handshake w. remote processes
-    tmq.handshake(addr_split[1], addr_split[2], args.num_sinograms, args.num_columns)
+    print(addr_split)
+    tmq.handshake(addr_split[1], int(addr_split[2]), args.num_sinograms, args.num_columns)
 
   # Subscriber setup
   subscriber_socket = context.socket(zmq.SUB)
@@ -124,7 +125,7 @@ def main():
 
     # Deserialize msg to image
     read_image = serializer.deserialize(serialized_image=msg)
-    #serializer.info(read_image) # print image information
+    serializer.info(read_image) # print image information
 
     # Local checks
     if args.check_seq:
@@ -135,10 +136,10 @@ def main():
 
     # Push image to workers (REQ/REP)
     my_image_np = read_image.TdataAsNumpy()
-    if args.uint8_to_float32 or args.uint8_to_float32:
+    if args.uint8_to_float32:
       my_image_np.dtype = np.uint8
       sub = np.array(my_image_np, dtype="float32")
-    elif args.uint16_to_float32 or args.uint8_to_float32:
+    elif args.uint16_to_float32:
       my_image_np.dtype = np.uint16
       sub = np.array(my_image_np, dtype="float32")
     else: sub = my_image_np
