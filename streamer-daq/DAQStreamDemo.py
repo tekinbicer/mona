@@ -91,6 +91,7 @@ def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
   idata = np.array(idata, dtype=np.dtype('uint16'))
   flat = np.array(flat, dtype=np.dtype('uint16'))
   dark = np.array(dark, dtype=np.dtype('uint16'))
+  itheta = np.array(itheta, dtype=np.dtype('float32'))
   print("Projection dataset IO time={:.2f}; dataset shape={}; size={}; Theta shape={};".format(
                              time.time()-t0 , idata.shape, idata.size, itheta.shape))
   return idata, flat, dark, itheta
@@ -240,6 +241,7 @@ def simulate_daq(publisher_socket, builder, input_f,
       serialized_data = serializer.serialize(image=proj, uniqueId=uniqueId,
                                         itype=itype,
                                         rotation=rotation, seq=seq) #, center=10.)
+      serializer.info(serialized_data)
       time_ser += time.time()-t_ser0
       seq+=1
       publisher_socket.send(serialized_data, copy=False)
