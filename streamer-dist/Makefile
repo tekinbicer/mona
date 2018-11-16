@@ -6,8 +6,8 @@ CFLAGS = -std=gnu99 -O3 -Wall -Wextra
 CFLAGS += -g -fPIC
 
 LIBS = -lzmq -lpython3.6m #-lpython2.7
-LIBDIRS = -L/home/bicer/local/lib -L/home/bicer/.conda/envs/py36/lib #-L/home/software/anaconda3/5.0.0/lib #-L/home/beams/USER2BMB/Apps/BlueSky/lib -L/home/beams/USER2BMB/bicer/local/lib #-L/local/tbicer/anaconda2/lib 
-INCLUDES = -I/home/bicer/local/include #-I/home/software/anaconda3/5.0.0/include #-I/home/beams/USER2BMB/Apps/BlueSky/include -I/home/beams/USER2BMB/bicer/local/include #/local/tbicer/anaconda2/include
+LIBDIRS = -L/home/bicer/miniconda3/envs/tomo/lib
+INCLUDES = -I/home/bicer/miniconda3/envs/tomo/include
 
 LDFLAGS = -shared
 
@@ -18,9 +18,10 @@ SWIGFILE = server.i
 SWIGOBJ = $(SWIGCFILE:c=o)
 SWIGCFILE = $(SWIGFILE:.i=_wrap.c)
 
-CCSWIG = /home/bicer/local/bin/swig
+CCSWIG = swig
 SWIGFLAGS = -python
-PYTHONINC = -I/home/bicer/.conda/envs/py36/include/python3.6m #-I/home/software/anaconda3/5.0.0/lib/python3.6/site-packages/numpy/core/include -I/home/software/anaconda3/5.0.0/include/python3.6m #-I/home/beams/USER2BMB/Apps/BlueSky/include/python3.6m #-I/local/tbicer/anaconda2/include/python2.7
+PYTHONINC = -I/home/bicer/miniconda3/envs/tomo/include/python3.6m
+#-I/home/software/anaconda3/5.0.0/lib/python3.6/site-packages/numpy/core/include -I/home/software/anaconda3/5.0.0/include/python3.6m #-I/home/beams/USER2BMB/Apps/BlueSky/include/python3.6m #-I/local/tbicer/anaconda2/include/python2.7
 
 
 # Executables

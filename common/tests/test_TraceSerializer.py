@@ -1,9 +1,10 @@
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../local'))
 import TraceSerializer
 import unittest
 import numpy as np
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), './local'))
 import flatbuffers
 
 class TestTraceImageSerializer(unittest.TestCase):

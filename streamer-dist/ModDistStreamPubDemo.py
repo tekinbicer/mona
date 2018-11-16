@@ -1,13 +1,13 @@
-#!/home/bicer/.conda/envs/py36/bin/python
-
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '../common'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../common/local'))
 import argparse
+import re
 import numpy as np
 import zmq
 import time
-import os
-import sys
 import math
-sys.path.append(os.path.join(os.path.dirname(__file__), './local'))
 import flatbuffers
 import TraceSerializer
 import tomopy as tp
@@ -15,25 +15,22 @@ import tracemq as tmq
 
 
 def parse_arguments():
-  parser = argparse.ArgumentParser( description='Data Acquisition Process')
-  parser.add_argument('--synchronize_subscriber', action='store_true',
-      help='Synchronizes this subscriber to publisher (publisher should wait for subscriptions)')
-  parser.add_argument('--subscriber_hwm', type=int, default=0, 
-      help='Sets high water mark value for this subscriber.')
-  parser.add_argument('--publisher_address', default=None,
-      help='Remote publisher address')
-  parser.add_argument('--publisher_rep_address',
-      help='Remote publisher REP address for synchronization')
+  parser = argparse.ArgumentParser( description='Data Distributor Process')
+  parser.add_argument('--data_source_addr', default=None,
+      help='Remote publisher address for the data source.')
+  parser.add_argument('--data_source_hwm', type=int, default=0, 
+      help='Sets high water mark value for this subscriber. Default=0.')
+  parser.add_argument('--data_source_synch_addr', default=None,
+      help='Synchronizes this subscriber to provided publisher REP socket address (publisher should wait for subscriptions)')
 
-  parser.add_argument('--local_publisher_address',
-      help='Local publisher for normalized data')
-  parser.add_argument('--publish_normalized',  action='store_true',
-      help='Local publisher for normalized data')
+  # Publisher for the others
+  parser.add_argument('--my_publisher_addr', default=None,
+      help='Publishes preprocessed data on given publisher address.')
+  parser.add_argument('--my_publisher_freq', type=int, default=1,
+              help='Publishes preprocessed data to with given frequency. E.g. if this equals 2, every other preprocessed projection is published. Default is 1.')
 
   # TQ communication
-  parser.add_argument('--bindip', default=None, help='IP address to bind tmq)')
-  parser.add_argument('--port', type=int, default=5560,
-                          help='Port address to bind tmq')
+  parser.add_argument('--my_distributor_addr', default=None, help='IP address to bind tmq')
   parser.add_argument('--beg_sinogram', type=int,
                           help='Starting sinogram for reconstruction')
   parser.add_argument('--num_sinograms', type=int,
@@ -41,22 +38,28 @@ def parse_arguments():
   parser.add_argument('--num_columns', type=int,
                           help='Number of columns (cols)')
 
-  parser.add_argument('--degree_to_radian', action='store_true',
+  # Available pre-processing options 
+  parser.add_argument('--degree_to_radian', action='store_true', default=False,
               help='Converts rotation information to radian.')
-  parser.add_argument('--mlog', action='store_true',
+  parser.add_argument('--mlog', action='store_true', default=False,
               help='Takes the minus log of projection data (projection data is divided by 50000 also).')
-  parser.add_argument('--uint16_to_float32', action='store_true',
+  parser.add_argument('--uint16_to_float32', action='store_true', default=False,
               help='Converts uint16 image byte sequence to float32.')
-  parser.add_argument('--uint8_to_float32', action='store_true',
+  parser.add_argument('--uint8_to_float32', action='store_true', default=False,
               help='Converts uint8 image byte sequence to float32.')
-  parser.add_argument('--normalize', action='store_true',
+  parser.add_argument('--normalize', action='store_true', default=False,
               help='Normalizes incoming projection data with previously received dark and flat field.')
-  parser.add_argument('--remove_invalids', action='store_true',
+  parser.add_argument('--remove_invalids', action='store_true', default=False,
               help='Removes invalid measurements from incoming projections, i.e. negatives, nans and infs.')
-  parser.add_argument('--remove_stripes', action='store_true',
+  parser.add_argument('--remove_stripes', action='store_true', default=False,
               help='Removes stripes using fourier-wavelet method (in tomopy).')
-  parser.add_argument('--disable_tmq', action='store_true', default=False,
-              help='Disable tmq for testing.')
+
+  # Enable/disable steps
+  parser.add_argument('--skip_serialize', action='store_true', default=False,
+              help='Disable deserialization of the incoming messages. Only receives data from remote data source, since deserialization is required for other operations.')
+  parser.add_argument('--check_seq', action='store_true', default=False,
+              help='Checks the incoming packages sequence numbers and prints out when there is problem (does not terminate). Expected sequence is 0, 1, .., i, i+1, ...')
+
 
   return parser.parse_args()
 
@@ -75,70 +78,79 @@ def main():
   context = zmq.Context()
 
   # TQM setup
-  if not args.disable_tmq:
-    if args.bindip is None: 
-      print("Bind ip (--bindip) is not defined. Exiting.")
-      sys.exit(0)
+  if args.my_distributor_addr is not None:
+    addr_split = re.split("://|:", args.my_distributor_addr)
     tmq.init_tmq()
     # Handshake w. remote processes
-    tmq.handshake(args.bindip, args.port, args.num_sinograms, args.num_columns)
+    print(addr_split)
+    tmq.handshake(addr_split[1], int(addr_split[2]), args.num_sinograms, args.num_columns)
 
   # Subscriber setup
   subscriber_socket = context.socket(zmq.SUB)
-  subscriber_socket.set_hwm(args.subscriber_hwm)
-  subscriber_socket.connect(args.publisher_address)
+  subscriber_socket.set_hwm(args.data_source_hwm)
+  subscriber_socket.connect(args.data_source_addr)
   subscriber_socket.setsockopt(zmq.SUBSCRIBE, b'')
 
   # Local publisher socket
-  print(args.local_publisher_address)
-  publisher_socket = context.socket(zmq.PUB)
-  publisher_socket.bind(args.local_publisher_address)
+  if args.my_publisher_addr is not None:
+    publisher_socket = context.socket(zmq.PUB)
+    publisher_socket.bind(args.my_publisher_addr)
 
-  if args.synchronize_subscriber:
-    synchronize_subs(context, args.publisher_rep_address)
+  if args.data_source_synch_addr is not None:
+    synchronize_subs(context, args.data_source_synch_addr)
 
   # Setup flatbuffer builder and serializer
   builder = flatbuffers.Builder(0)
   serializer = TraceSerializer.ImageSerializer(builder)
 
   # White/dark fields
-  # TODO Create a struct/class for the below two
   white_imgs=[]; tot_white_imgs=0; 
   dark_imgs=[]; tot_dark_imgs=0;
   
   # Receive images
   total_received=0
   total_size=0
-
+  seq=0
   time0 = time.time()
   while True:
     msg = subscriber_socket.recv()
+    total_received += 1
+    total_size += len(msg)
     if msg == b"end_data": break # End of data acquisition
+
+    # This is mostly for data rate tests
+    if args.skip_serialize: 
+      print("Skipping rest. Received msg: {}".format(total_received))
+      continue 
+
     # Deserialize msg to image
     read_image = serializer.deserialize(serialized_image=msg)
     serializer.info(read_image) # print image information
+
     # Local checks
-    seq=read_image.Seq()
-    #if seq!=total_received: 
-    #  print("Wrong sequence number: {} != {}".format(seq, total_received))
+    if args.check_seq:
+      if seq != read_image.Seq():
+        print("Wrong sequence number: {} != {}".format(seq, read_image.Seq()))
+      seq += 1
+       
 
     # Push image to workers (REQ/REP)
     my_image_np = read_image.TdataAsNumpy()
-    # XXX redundant if else below, fix it
-    if args.uint16_to_float32:
-      my_image_np.dtype = np.uint16
-      sub = np.array(my_image_np, dtype="float32")
-    elif args.uint8_to_float32:
+    if args.uint8_to_float32:
       my_image_np.dtype = np.uint8
+      sub = np.array(my_image_np, dtype="float32")
+    elif args.uint16_to_float32:
+      my_image_np.dtype = np.uint16
       sub = np.array(my_image_np, dtype="float32")
     else: sub = my_image_np
     sub = sub.reshape((1, read_image.Dims().Y(), read_image.Dims().X()))
+
     if args.num_sinograms is not None:
       sub = sub[:, args.beg_sinogram:args.beg_sinogram+args.num_sinograms, :]
 
 
     # If incoming data is projection
-    if (read_image.Itype() is serializer.ITypes.Projection) and (total_received%5==0):
+    if read_image.Itype() is serializer.ITypes.Projection:
       rotation=read_image.Rotation()
       if args.degree_to_radian: rotation = rotation*math.pi/180.
 
@@ -164,59 +176,57 @@ def main():
       ncols = sub.shape[2] 
       sub = sub.reshape(sub.shape[0]*sub.shape[1]*sub.shape[2])
 
-      if not args.disable_tmq:
+      if args.my_distributor_addr is not None:
         tmq.push_image(sub, args.num_sinograms, ncols, rotation, 
                         read_image.UniqueId(), read_image.Center())
 
-      if args.publish_normalized:
+      if (args.my_publisher_addr is not None) and (total_received%args.my_publisher_freq==0):
         builder.Reset()
         serializer = TraceSerializer.ImageSerializer(builder)
         mub = np.reshape(sub,(1, read_image.Dims().Y(), read_image.Dims().X()))
         serialized_data = serializer.serialize(image=mub, uniqueId=0, rotation=0,
                     itype=serializer.ITypes.Projection)
         print("Publishing:{}".format(read_image.UniqueId()))
-        #sub = tp.normalize(sub, flat=white_imgs, dark=dark_imgs)
         publisher_socket.send(serialized_data)
 
 
     # If incoming data is white field
     if read_image.Itype() is serializer.ITypes.White: 
-      print("White field data is received: {}".format(read_image.UniqueId()))
+      #print("White field data is received: {}".format(read_image.UniqueId()))
       white_imgs.extend(sub)
       tot_white_imgs += 1
 
     # If incoming data is white-reset
     if read_image.Itype() is serializer.ITypes.WhiteReset: 
-      print("White-reset data is received: {}".format(read_image.UniqueId()))
+      #print("White-reset data is received: {}".format(read_image.UniqueId()))
       white_imgs=[]
       white_imgs.extend(sub)
       tot_white_imgs += 1
 
     # If incoming data is dark field
     if read_image.Itype() is serializer.ITypes.Dark:
-      print("Dark data is received: {}".format(read_image.UniqueId())) 
+      #print("Dark data is received: {}".format(read_image.UniqueId())) 
       dark_imgs.extend(sub)
       tot_dark_imgs += 1
 
     # If incoming data is dark-reset 
     if read_image.Itype() is serializer.ITypes.DarkReset:
-      print("Dark-reset data is received:\n{}".format(read_image.UniqueId())) 
+      #print("Dark-reset data is received: {}".format(read_image.UniqueId())) 
       dark_imgs=[]
       dark_imgs.extend(sub)
       tot_dark_imgs += 1
 
-
-    total_received += 1
-    total_size += len(msg)
   time1 = time.time()
     
   # Profile information
-  print("Received number of projections: {}".format(total_received))
-  print("Rate = {} MB/sec; {} msg/sec".format(
-            (total_size/(2**20))/(time1-time0), total_received/(time1-time0)))
+  elapsed_time = time1-time0
+  tot_MiBs = (total_size*1.)/2**20
+  print("Received number of projections: {}; Total size (MiB): {:.2f}; Elapsed time (s): {:.2f}".format(total_received, tot_MiBs, elapsed_time))
+  print("Rate (MiB/s): {:.2f}; (msg/s): {:.2f}".format(
+            tot_MiBs/elapsed_time, total_received/elapsed_time))
 
   # Finalize TMQ
-  if not args.disable_tmq:
+  if not args.my_distributor_addr is not None:
     tmq.done_image()
     tmq.finalize_tmq()
 
