@@ -17,22 +17,21 @@ def parse_arguments():
   parser = argparse.ArgumentParser(
           description='Data Acquisition Process Simulator')
 
+  parser.add_argument('--mode', type=int, required=True,
+                      help='Data acqusition mod (0=detector; 1=simulate; 2=test)')
+
+  parser.add_argument("--image_pv", help="EPICS image PV name.")
+
   parser.add_argument('--publisher_addr', default="tcp://*:50000",
                       help='Publisher addresss of data source process.')
   parser.add_argument('--publisher_hwm', type=int, default=0,
                       help='Sets high water mark value for publisher.')
 
-  parser.add_argument('--synch_addr', default=None,
-                      help='Waits for all subscribers to join.')
+  parser.add_argument('--synch_addr', help='Waits for all subscribers to join.')
   parser.add_argument('--synch_count', type=int, default=1,
                       help='Number of expected subscribers.')
 
-  parser.add_argument('--daq_mod', type=int, default=2,
-                      help='Data acqusition mod (0=detector; 1=simulate; 2=test)')
-
-  parser.add_argument('--simulation_file', default="../data/tomo_00001.h5",
-                        help='File name for mock data acquisition. '
-                              'Default to shale data.')
+  parser.add_argument('--simulation_file', help='File name for mock data acquisition. ')
   parser.add_argument('--d_iteration', type=int, default=1,
                       help='Number of iteration on simulated data.')
   parser.add_argument('--iteration_sleep', type=float, default=0,
@@ -41,9 +40,9 @@ def parse_arguments():
                       help='Starting sinogram for reconstruction.')
   parser.add_argument('--num_sinograms', type=int, default=0,
                       help='Number of sinograms to reconstruct.')
-  parser.add_argument('--num_sinogram_columns', type=int, default=2048,
+  parser.add_argument('--num_sinogram_columns', type=int,
                       help='Number of columns per sinogram.')
-  parser.add_argument('--num_sinogram_projections', type=int, default=1440,
+  parser.add_argument('--num_sinogram_projections', type=int,
                       help='Number of projections per sinogram.')
 
   return parser.parse_args()
@@ -60,28 +59,6 @@ def synchronize_subs(context, subscriber_count, bind_address_rep):
     sync_socket.send(b'') # reply ack
     counter += 1
     print("Subscriber joined: {}/{}".format(counter, subscriber_count))
-
-
-def test_daq(publisher_socket, builder,
-              rotation_step=0.25, num_sinograms=0, 
-              num_sinogram_columns=2048, seq=0,
-              num_sinogram_projections=1440):
-  print("Sending projections")
-  if num_sinograms<1: num_sinograms=2048
-  # Randomly generate image data
-  dims=(num_sinograms, num_sinogram_columns)
-  image = np.array(np.random.randint(2, size=dims), dtype='uint16')
-
-  for uniqueId in range(num_sinogram_projections):
-    builder.Reset()
-    serializer = TraceSerializer.ImageSerializer(builder)
-    serialized_data = serializer.serialize(image=image, uniqueId=uniqueId+7,
-                                      itype=serializer.ITypes.Projection, 
-                                      rotation_step=rotation_step, seq=seq) 
-    seq+=1
-    publisher_socket.send(serialized_data)
-
-  return seq
 
 
 def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
@@ -111,7 +88,7 @@ def serialize_dataset(builder, idata, flat, dark, itheta, seq=0):
       itype = serializer.ITypes.WhiteReset if flatId is 0 else serializer.ITypes.White
       serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueFlatId, 
                                         itype=itype,
-                                        rotation=0, seq=seq) #, center=10.)
+                                        rotation=0, seq=seq)
       data.append(serialized_data)
       time_ser += time.time()-t_ser0
       seq+=1
@@ -151,7 +128,6 @@ def serialize_dataset(builder, idata, flat, dark, itheta, seq=0):
   print("Serialization time={:.2f}".format(time_ser))
   return np.array(data)
   
-
 def simulate_daq_serialized(publisher_socket, builder, input_f, 
                       beg_sinogram=0, num_sinograms=0, seq=0, slp=0,
                       iteration=1):
@@ -207,7 +183,7 @@ def simulate_daq(publisher_socket, builder, input_f,
         time_ser += time.time()-t_ser0
         seq+=1
         publisher_socket.send(serialized_data, copy=False)
-        #time.sleep(slp)
+        time.sleep(slp)
     start_index+=flat.shape[0]
 
     # Send dark data
@@ -226,7 +202,7 @@ def simulate_daq(publisher_socket, builder, input_f,
         time_ser += time.time()-t_ser0
         seq+=1
         publisher_socket.send(serialized_data, copy=False)
-        #time.sleep(slp)
+        time.sleep(slp)
     start_index+=dark.shape[0]
 
     # Send projection data
@@ -245,7 +221,7 @@ def simulate_daq(publisher_socket, builder, input_f,
       time_ser += time.time()-t_ser0
       seq+=1
       publisher_socket.send(serialized_data, copy=False)
-      #time.sleep(slp)
+      time.sleep(slp)
   time1 = time.time()
   print("time={}".format(time1-time0))
   tot_MiBs = (iteration*(idata.nbytes+flat.nbytes+dark.nbytes))/2**20
@@ -253,6 +229,30 @@ def simulate_daq(publisher_socket, builder, input_f,
   print("Serialization time={}".format(time_ser))
 
   return seq
+
+
+def test_daq(publisher_socket, builder,
+              rotation_step=0.25, num_sinograms=0, 
+              num_sinogram_columns=2048, seq=0,
+              num_sinogram_projections=1440, slp=0):
+  print("Sending projections")
+  if num_sinograms<1: num_sinograms=2048
+  # Randomly generate image data
+  dims=(num_sinograms, num_sinogram_columns)
+  image = np.array(np.random.randint(2, size=dims), dtype='uint16')
+
+  for uniqueId in range(num_sinogram_projections):
+    builder.Reset()
+    serializer = TraceSerializer.ImageSerializer(builder)
+    serialized_data = serializer.serialize(image=image, uniqueId=uniqueId+7,
+                                      itype=serializer.ITypes.Projection, 
+                                      rotation_step=rotation_step, seq=seq) 
+    seq+=1
+    publisher_socket.send(serialized_data)
+    time.sleep(slp)
+
+  return seq
+
 
 
 
@@ -393,32 +393,28 @@ def main():
 
   # 2. Transfer data
   time0 = time.time()
-  if args.daq_mod == 0: # Read data from PV
+  if args.mode == 0: # Read data from PV
     with TImageTransfer(publisher_socket=publisher_socket,
                         pv_image=args.image_pv, builder=builder, 
                         beg_sinogram=args.beg_sinogram, 
                         num_sinograms=args.num_sinograms, seq=0) as tdet:
       tdet.start_monitor()  # Infinite loop
 
-  elif args.daq_mod == 1: # Simulate data acquisition with a file
+  elif args.mode == 1: # Simulate data acquisition with a file
     print("Simulating data acquisition on file: {}; iteration: {}".format(args.simulation_file, args.d_iteration))
     simulate_daq_serialized(publisher_socket=publisher_socket, 
               input_f=args.simulation_file, builder=builder,
               beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
               iteration=args.d_iteration,
               slp=args.iteration_sleep)
-    #simulate_daq(publisher_socket=publisher_socket, 
-    #          input_f=args.simulation_file, builder=builder,
-    #          beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
-    #          iteration=args.d_iteration)
-  elif args.daq_mod == 2: # Test data acquisition
+  elif args.mode == 2: # Test data acquisition
     test_daq(publisher_socket=publisher_socket, builder=builder,
               num_sinograms=args.num_sinograms,                       # Y
               num_sinogram_columns=args.num_sinogram_columns,         # X 
-              num_sinogram_projections=args.num_sinogram_projections, #Z
+              num_sinogram_projections=args.num_sinogram_projections, # Z
               slp=args.iteration_sleep)
   else:
-    print("Unknown mode: {}".format(args.daq_mod));
+    print("Unknown mode: {}".format(args.mode));
 
   publisher_socket.send("end_data".encode())
   time1 = time.time()
