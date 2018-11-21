@@ -84,8 +84,10 @@ def main():
     # Handshake w. remote processes
     print(addr_split)
     tmq.handshake(addr_split[1], int(addr_split[2]), args.num_sinograms, args.num_columns)
+  else: print("No distributor..")
 
   # Subscriber setup
+  print("Subscribing to: {}".format(args.data_source_addr))
   subscriber_socket = context.socket(zmq.SUB)
   subscriber_socket.set_hwm(args.data_source_hwm)
   subscriber_socket.connect(args.data_source_addr)
