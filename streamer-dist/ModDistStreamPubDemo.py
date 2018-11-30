@@ -96,6 +96,7 @@ def main():
   # Local publisher socket
   if args.my_publisher_addr is not None:
     publisher_socket = context.socket(zmq.PUB)
+    publisher_socket.set_hwm(200) # XXX
     publisher_socket.bind(args.my_publisher_addr)
 
   if args.data_source_synch_addr is not None:
@@ -147,8 +148,6 @@ def main():
     else: sub = my_image_np
     sub = sub.reshape((1, read_image.Dims().Y(), read_image.Dims().X()))
 
-    if args.num_sinograms is not None:
-      sub = sub[:, args.beg_sinogram:args.beg_sinogram+args.num_sinograms, :]
 
 
     # If incoming data is projection
@@ -175,21 +174,28 @@ def main():
         sub = tp.remove_neg(sub, val=0.00)
         sub[np.where(sub == np.inf)] = 0.00
 
+
+
+      # Publish to the world
+      if (args.my_publisher_addr is not None) and (total_received%args.my_publisher_freq==0):
+        builder.Reset()
+        serializer = TraceSerializer.ImageSerializer(builder)
+        mub = np.reshape(sub,(read_image.Dims().Y(), read_image.Dims().X()))
+        serialized_data = serializer.serialize(image=mub, uniqueId=0, rotation=0,
+                    itype=serializer.ITypes.Projection)
+        print("Publishing:{}".format(read_image.UniqueId()))
+        publisher_socket.send(serialized_data)
+
+      # Send to workers
+      if args.num_sinograms is not None:
+        sub = sub[:, args.beg_sinogram:args.beg_sinogram+args.num_sinograms, :]
+
       ncols = sub.shape[2] 
       sub = sub.reshape(sub.shape[0]*sub.shape[1]*sub.shape[2])
 
       if args.my_distributor_addr is not None:
         tmq.push_image(sub, args.num_sinograms, ncols, rotation, 
                         read_image.UniqueId(), read_image.Center())
-
-      if (args.my_publisher_addr is not None) and (total_received%args.my_publisher_freq==0):
-        builder.Reset()
-        serializer = TraceSerializer.ImageSerializer(builder)
-        mub = np.reshape(sub,(1, read_image.Dims().Y(), read_image.Dims().X()))
-        serialized_data = serializer.serialize(image=mub, uniqueId=0, rotation=0,
-                    itype=serializer.ITypes.Projection)
-        print("Publishing:{}".format(read_image.UniqueId()))
-        publisher_socket.send(serialized_data)
 
 
     # If incoming data is white field
