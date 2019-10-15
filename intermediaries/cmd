@@ -1,0 +1,1 @@
+python tx_daq_dist_intermediary.py --shared_queue_router_addr='tcp://*:50001' --shared_queue_dealer_addr='tcp://164.54.113.143:50001' --forwarder_xpub_addr='tcp://*:50000' --forwarder_xsub_addr='tcp://164.54.113.143:50000'
