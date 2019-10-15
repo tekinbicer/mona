@@ -17,7 +17,7 @@ class Poller(Thread):
   def run(self):
     print('start poller {}'.format(self.id))
     subscriber = context.socket(zmq.SUB)
-    subscriber.connect("tcp://127.0.0.1:5559")
+    subscriber.connect("tcp://127.0.0.1:50000")
     subscriber.setsockopt_string(zmq.SUBSCRIBE, self.topic)
     self.loop = True
     while self.loop:
