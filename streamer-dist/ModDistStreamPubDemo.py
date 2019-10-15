@@ -8,7 +8,6 @@ import numpy as np
 import zmq
 import time
 import math
-import flatbuffers
 import TraceSerializer
 import tomopy as tp
 import tracemq as tmq
@@ -102,9 +101,8 @@ def main():
   if args.data_source_synch_addr is not None:
     synchronize_subs(context, args.data_source_synch_addr)
 
-  # Setup flatbuffer builder and serializer
-  builder = flatbuffers.Builder(0)
-  serializer = TraceSerializer.ImageSerializer(builder)
+  # Setup serializer
+  serializer = TraceSerializer.ImageSerializer()
 
   # White/dark fields
   white_imgs=[]; tot_white_imgs=0; 
@@ -159,17 +157,17 @@ def main():
       if args.normalize: 
         # flat/dark fields' corresponding rows
         if tot_white_imgs>0 and tot_dark_imgs>0:
-          print("normalizing: white_imgs.shape={}; dark_imgs.shape={}".format(
-                  np.array(white_imgs).shape, np.array(dark_imgs).shape))
+          # print("normalizing: white_imgs.shape={}; dark_imgs.shape={}".format(
+                  #np.array(white_imgs).shape, np.array(dark_imgs).shape))
           sub = tp.normalize(sub, flat=white_imgs, dark=dark_imgs)
       if args.remove_stripes: 
-        print("removing stripes")
+        #print("removing stripes")
         sub = tp.remove_stripe_fw(sub, level=7, wname='sym16', sigma=1, pad=True)
       if args.mlog: 
-        print("applying -log")
+        #print("applying -log")
         sub = -np.log(sub)
       if args.remove_invalids:
-        print("removing invalids")
+        #print("removing invalids")
         sub = tp.remove_nan(sub, val=0.0)
         sub = tp.remove_neg(sub, val=0.00)
         sub[np.where(sub == np.inf)] = 0.00
@@ -178,8 +176,6 @@ def main():
 
       # Publish to the world
       if (args.my_publisher_addr is not None) and (total_received%args.my_publisher_freq==0):
-        builder.Reset()
-        serializer = TraceSerializer.ImageSerializer(builder)
         mub = np.reshape(sub,(read_image.Dims().Y(), read_image.Dims().X()))
         serialized_data = serializer.serialize(image=mub, uniqueId=0, rotation=0,
                     itype=serializer.ITypes.Projection)

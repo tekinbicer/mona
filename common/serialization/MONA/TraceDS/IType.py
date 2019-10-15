@@ -3,9 +3,10 @@
 # namespace: TraceDS
 
 class IType(object):
-    Projection = 0
-    White = 1
-    Dark = 2
-    WhiteReset = 3
-    DarkReset = 4
+    End = 0
+    Projection = 1
+    White = 2
+    Dark = 3
+    WhiteReset = 4
+    DarkReset = 5
 

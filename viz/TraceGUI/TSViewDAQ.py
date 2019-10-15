@@ -4,10 +4,10 @@ from PyQt5.QtCore import QObject, pyqtSlot
 from PyQt5.QtWidgets import QWidget
 from PyQt5.uic import loadUi
 import pyqtgraph as pg
+import tomopy as tp
 
 
 import numpy as np
-import MockVizData
 import TDataModel
 import time
 
@@ -22,16 +22,16 @@ class TSViewDAQ(QWidget):
     self.dataModel = TDataModel.DAQ()
 
     self.ddims = (1024, 1024) # default to 1Kx1K
-    self.viewBox = self.graphicsViewStreamingData.addViewBox()
+    self.viewBox = self.graphicsViewStreamingData.getView()
     self.viewBox.setAspectLocked(True)
 
-    self.img = pg.ImageItem(border='w')
+    self.img = self.graphicsViewStreamingData.getImageItem()
     self.img.setOpts(axisOrder='row-major')
-    self.histogramAdjust.setImageItem(self.img)
 
     self.img.setImage(np.random.randint(255, size=self.ddims, dtype=np.uint16))
-    self.viewBox.addItem(self.img)
     self.viewBox.autoRange()
+
+    self.graphicsViewStreamingData.ui.menuBtn.setVisible(False)
 
     self.qtimer = QtCore.QTimer()
     self.qtimer.timeout.connect(self.updateImage)
@@ -72,13 +72,18 @@ class TSViewDAQ(QWidget):
       self.snapTime = time.time()
     else:
       img, itype = self.dataModel.receive()
+      img = tp.downsample(img, 2)
 
-      if img.shape is not self.ddims:
-        print("Shape is not correct")
-        self.ddims=img.shape
+      # Fix the GUI area if the incoming image size doesn't fit
+      # The first dimension is z, which is redundant for 2D view below
+      if img.shape[1:] is not self.ddims: 
+        print("Shape is not correct: {} vs {}".format(img.shape, self.ddims))
+        self.ddims = img.shape[1:]
         self.viewBox.setRange(QtCore.QRectF(0, 0, self.ddims[0], self.ddims[1]))
         img, itype = self.dataModel.receive()
-        self.img.setImage(img[::-1,:])
+        self.graphicsViewStreamingData.setImage(img)
+        #self.graphicsViewStreamingData.setImage(img[::-1,:])
+        #self.img.setImage(img[::-1,:])
       self.qtimer.start(0)
       self.qtimerOn = True
       self.snapTime= time.time()
@@ -89,8 +94,13 @@ class TSViewDAQ(QWidget):
     #self.img.setImage(np.flipud(self.dataModel.receive()))
     #self.img.setImage(self.dataModel.receive())
     img, itype = self.dataModel.receive()
-    self.img.setImage(img[::-1,:])
-    self.histogramAdjust.regionChanged() # This is a hack and probably slow. There is no autoLevel=False in pyqtgraph, hence this solution. May file a enchancement.
+    if len(img.shape) == 3 and img.shape[0] == 1: img.shape=(img.shape[1], img.shape[2])
+    if self.dataModel.ndata>15: self.graphicsViewStreamingData.setImage(img, autoRange=False, autoLevels=False)#, autoHistogramRange=False )
+    else: 
+      self.graphicsViewStreamingData.setImage(img, autoRange=False)
+    #self.graphicsViewStreamingData.setImage(img[::-1,:])
+    #self.img.setImage(img[::-1,:])
+    #self.histogramAdjust.regionChanged() # This is a hack and probably slow. There is no autoLevel=False in pyqtgraph, hence this solution. May file a enchancement.
     #print(self.histogramAdjust.region.getRegion())
 
 
@@ -110,14 +120,19 @@ class TSViewDAQ(QWidget):
   #    self.labelStatusInfo.setText('Projection acquisition started')
 
 
-
-
+  def excepthook(self, e_type, e_value, e_tb):
+    # ignore KeyboardInterrupt
+    if issubclass(e_type, KeyboardInterrupt):
+      print("KeyboardException silenced: {} {} {}".format(e_type, e_value, e_tb))
+    else: print("Silenced exception: {}".format(e_type))
+    return
 
 if __name__ == "__main__":
-    import sys
-    app = QtWidgets.QApplication(sys.argv)
-    tsView = TSViewDAQ()
-    tsView.show()
-    sys.exit(app.exec_())
+  import sys
+  app = QtWidgets.QApplication(sys.argv)
+  tsView = TSViewDAQ()
+  #sys.excepthook = tsView.excepthook
+  tsView.show()
+  sys.exit(app.exec_())
 
   

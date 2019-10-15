@@ -15,9 +15,8 @@ class DAQ():
   def __init__(self):
     # setup ZMQ socket
     self.subscriber_socket = None 
-    # Setup flatbuffer builder and serializer
-    builder = flatbuffers.Builder(0)
-    self.serializer = TraceSerializer.ImageSerializer(builder)
+    # Setup flatbuffer serializer
+    self.serializer = TraceSerializer.ImageSerializer()
     self.ndata = 0
     self.firstMsgId = 0
     self.lastMsgId = 0
@@ -55,10 +54,10 @@ class DAQ():
       if diff > 0: self.lostMsgs += diff
       self.lastMsgId = currId 
 
-    ddims = (img_msg.Dims().Y(), img_msg.Dims().X())
+    ddims = (img_msg.Dims().Z(), img_msg.Dims().Y(), img_msg.Dims().X())
 
     img = img_msg.TdataAsNumpy()
-    bsize = int(img.shape[0]/(ddims[0]*ddims[1]))
+    bsize = int(img.shape[0]/(ddims[0]*ddims[1]*ddims[2]))
 
     if bsize == 4: img.dtype=np.float32
     elif bsize == 2: img.dtype=np.uint16

@@ -17,17 +17,7 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_2">
      <item>
-      <widget class="GraphicsLayoutWidget" name="graphicsViewStreamingData">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="MinimumExpanding" vsizetype="MinimumExpanding">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="HistogramLUTWidget" name="histogramAdjust" native="true"/>
+      <widget class="ImageView" name="graphicsViewStreamingData"/>
      </item>
     </layout>
    </item>
@@ -79,21 +69,14 @@
  </widget>
  <customwidgets>
   <customwidget>
-   <class>GraphicsLayoutWidget</class>
+   <class>ImageView</class>
    <extends>QGraphicsView</extends>
    <header>pyqtgraph.h</header>
-  </customwidget>
-  <customwidget>
-   <class>HistogramLUTWidget</class>
-   <extends>QWidget</extends>
-   <header>pyqtgraph.h</header>
-   <container>1</container>
   </customwidget>
  </customwidgets>
  <tabstops>
   <tabstop>textBoxPublisherAddress</tabstop>
   <tabstop>buttonConnectPublisher</tabstop>
-  <tabstop>graphicsViewStreamingData</tabstop>
  </tabstops>
  <resources/>
  <connections>

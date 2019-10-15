@@ -5,9 +5,11 @@ CC = cc
 CFLAGS = -std=gnu99 -O3 -Wall -Wextra
 CFLAGS += -g -fPIC
 
+TPYHOME = /local/tbicer/anaconda2/envs/py36
+
 LIBS = -lzmq -lpython3.6m #-lpython2.7
-LIBDIRS = -L/home/bicer/miniconda3/envs/tomo/lib
-INCLUDES = -I/home/bicer/miniconda3/envs/tomo/include
+LIBDIRS = -L${TPYHOME}/lib
+INCLUDES = -I${TPYHOME}/include
 
 LDFLAGS = -shared
 
@@ -20,7 +22,7 @@ SWIGCFILE = $(SWIGFILE:.i=_wrap.c)
 
 CCSWIG = swig
 SWIGFLAGS = -python
-PYTHONINC = -I/home/bicer/miniconda3/envs/tomo/include/python3.6m
+PYTHONINC = -I${TPYHOME}/include/python3.6m
 #-I/home/software/anaconda3/5.0.0/lib/python3.6/site-packages/numpy/core/include -I/home/software/anaconda3/5.0.0/include/python3.6m #-I/home/beams/USER2BMB/Apps/BlueSky/include/python3.6m #-I/local/tbicer/anaconda2/include/python2.7
 
 

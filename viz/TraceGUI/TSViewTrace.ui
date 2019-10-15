@@ -34,7 +34,11 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayoutConnect">
      <item>
-      <widget class="QLineEdit" name="textBoxPublisherAddress"/>
+      <widget class="QLineEdit" name="textBoxPublisherAddress">
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
      </item>
      <item>
       <widget class="QPushButton" name="buttonConnectPublisher">

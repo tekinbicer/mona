@@ -3,3 +3,5 @@ python DAQStreamDemo.py --daq_mod 1 --simulation_file /dev/shm/tomo_00001.h5 --d
 python DAQStreamDemo.py --daq_mod 1 --simulation_file /dev/shm/tomo_00001.h5 --d_iteration 100 --publisher_addr tcp://*:50000 --synch_addr tcp://10.1.1.20:50001 --synch_count 1 --iteration_sleep 1
 Last run:
 python DAQStreamDemo.py --daq_mod 1 --simulation_file ../../data/tomo_00001.h5 --d_iteration 100 --publisher_addr tcp://*:50000 --synch_addr tcp://10.1.2.10:50001 --synch_count 1  --iteration_sleep 1
+python DAQStream.py --mode 1 --simulation_file /data/tomography/shale/originals/00001/tomo_00001.h5 --d_iteration 100 --publisher_addr tcp://*:50000 --iteration_sleep 1
+python DAQStream.py --mode 1 --simulation_file /data/tomography/shale/originals/00001/tomo_00001.h5 --d_iteration 100 --publisher_addr tcp://*:50000 --iteration_sleep 1 --synch_addr tcp://*:50001 --synch_count 1 --iteration_sleep 1

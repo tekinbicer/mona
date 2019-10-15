@@ -8,7 +8,6 @@ import zmq
 import time
 import sys
 import TraceSerializer
-import flatbuffers
 import h5py as h5
 import dxchange
 import tomopy as tp
@@ -73,18 +72,19 @@ def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
                              time.time()-t0 , idata.shape, idata.size, itheta.shape))
   return idata, flat, dark, itheta
 
-def serialize_dataset(builder, idata, flat, dark, itheta, seq=0):
+def serialize_dataset(idata, flat, dark, itheta, seq=0):
   data = []
   start_index=0
   time_ser=0.
+  serializer = TraceSerializer.ImageSerializer()
+
   print("Starting serialization")
   if flat is not None:
     for uniqueFlatId, flatId in zip(range(start_index, 
                              start_index+flat.shape[0]), range(flat.shape[0])):
       t_ser0 =  time.time()
-      builder.Reset()
+      #builder.Reset()
       dflat = flat[flatId]
-      serializer = TraceSerializer.ImageSerializer(builder)
       itype = serializer.ITypes.WhiteReset if flatId is 0 else serializer.ITypes.White
       serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueFlatId, 
                                         itype=itype,
@@ -99,9 +99,9 @@ def serialize_dataset(builder, idata, flat, dark, itheta, seq=0):
     for uniqueDarkId, darkId in zip(range(start_index, start_index+dark.shape[0]), 
                                     range(dark.shape[0])):
       t_ser0 =  time.time()
-      builder.Reset()
+      #builder.Reset()
       dflat = dark[flatId]
-      serializer = TraceSerializer.ImageSerializer(builder)
+      #serializer = TraceSerializer.ImageSerializer(builder)
       itype = serializer.ITypes.DarkReset if darkId is 0 else serializer.ITypes.Dark
       serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueDarkId, 
                                         itype=itype,
@@ -115,9 +115,9 @@ def serialize_dataset(builder, idata, flat, dark, itheta, seq=0):
   for uniqueId, projId, rotation in zip(range(start_index, start_index+idata.shape[0]), 
                                         range(idata.shape[0]), itheta):
     t_ser0 =  time.time()
-    builder.Reset()
+    #builder.Reset()
     proj =  idata[projId]
-    serializer = TraceSerializer.ImageSerializer(builder)
+    #serializer = TraceSerializer.ImageSerializer(builder)
     itype = serializer.ITypes.Projection
     serialized_data = serializer.serialize(image=proj, uniqueId=uniqueId,
                                       itype=itype,
@@ -128,12 +128,12 @@ def serialize_dataset(builder, idata, flat, dark, itheta, seq=0):
   print("Serialization time={:.2f}".format(time_ser))
   return np.array(data)
   
-def simulate_daq_serialized(publisher_socket, builder, input_f, 
+def simulate_daq_serialized(publisher_socket, input_f, 
                       beg_sinogram=0, num_sinograms=0, seq=0, slp=0,
                       iteration=1):
 
   idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
-  serialized_data = serialize_dataset(builder, idata, flat, dark, itheta)
+  serialized_data = serialize_dataset(idata, flat, dark, itheta)
   del idata, flat, dark
   #print("data shape={}; bytes={}; type={}; serialized_data_len={}".format(serialized_data.shape, serialized_data.nbytes, type(serialized_data[0]), len(serialized_data[0])))
 
@@ -158,9 +158,11 @@ def simulate_daq_serialized(publisher_socket, builder, input_f,
 
 
 
-def simulate_daq(publisher_socket, builder, input_f, 
+def simulate_daq(publisher_socket, input_f, 
                       beg_sinogram=0, num_sinograms=0, seq=0, slp=0,
                       iteration=1):
+
+  serializer = TraceSerializer.ImageSerializer()
 
   start_index=0
   time0 = time.time()
@@ -172,10 +174,10 @@ def simulate_daq(publisher_socket, builder, input_f,
       for uniqueFlatId, flatId in zip(range(start_index, 
                                start_index+flat.shape[0]), range(flat.shape[0])):
         t_ser0 =  time.time()
-        builder.Reset()
+        #builder.Reset()
         dflat = flat[flatId]
         #print("Publishing flat={}; shape={}".format(uniqueFlatId, flat.shape))
-        serializer = TraceSerializer.ImageSerializer(builder)
+        #serializer = TraceSerializer.ImageSerializer(builder)
         itype = serializer.ITypes.WhiteReset if flatId is 0 else serializer.ITypes.White
         serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueFlatId, 
                                           itype=itype,
@@ -191,10 +193,10 @@ def simulate_daq(publisher_socket, builder, input_f,
       for uniqueDarkId, darkId in zip(range(start_index, start_index+dark.shape[0]), 
                                       range(dark.shape[0])):
         t_ser0 =  time.time()
-        builder.Reset()
+        #builder.Reset()
         dflat = dark[flatId]
         #print("Publishing dark={}; shape={}".format(uniqueDarkId, flat.shape))
-        serializer = TraceSerializer.ImageSerializer(builder)
+        #serializer = TraceSerializer.ImageSerializer(builder)
         itype = serializer.ITypes.DarkReset if darkId is 0 else serializer.ITypes.Dark
         serialized_data = serializer.serialize(image=dflat, uniqueId=uniqueDarkId, 
                                           itype=itype,
@@ -209,10 +211,10 @@ def simulate_daq(publisher_socket, builder, input_f,
     for uniqueId, projId, rotation in zip(range(start_index, start_index+idata.shape[0]), 
                                           range(idata.shape[0]), itheta):
       t_ser0 =  time.time()
-      builder.Reset()
+      #builder.Reset()
       proj =  idata[projId]
       #print("Publishing projection={}; shape={}".format(uniqueId, proj.shape))
-      serializer = TraceSerializer.ImageSerializer(builder)
+      #serializer = TraceSerializer.ImageSerializer(builder)
       itype = serializer.ITypes.Projection
       serialized_data = serializer.serialize(image=proj, uniqueId=uniqueId,
                                         itype=itype,
@@ -231,7 +233,7 @@ def simulate_daq(publisher_socket, builder, input_f,
   return seq
 
 
-def test_daq(publisher_socket, builder,
+def test_daq(publisher_socket,
               rotation_step=0.25, num_sinograms=0, 
               num_sinogram_columns=2048, seq=0,
               num_sinogram_projections=1440, slp=0):
@@ -241,9 +243,9 @@ def test_daq(publisher_socket, builder,
   dims=(num_sinograms, num_sinogram_columns)
   image = np.array(np.random.randint(2, size=dims), dtype='uint16')
 
+  serializer = TraceSerializer.ImageSerializer()
+
   for uniqueId in range(num_sinogram_projections):
-    builder.Reset()
-    serializer = TraceSerializer.ImageSerializer(builder)
     serialized_data = serializer.serialize(image=image, uniqueId=uniqueId+7,
                                       itype=serializer.ITypes.Projection, 
                                       rotation_step=rotation_step, seq=seq) 
@@ -257,13 +259,12 @@ def test_daq(publisher_socket, builder,
 
 
 class TImageTransfer:
-  def __init__(self, publisher_socket, pv_image, builder,
+  def __init__(self, publisher_socket, pv_image,
                 beg_sinogram=0, num_sinograms=0, seq=0):
     import pvaccess
 
     self.publisher_socket = publisher_socket
     self.pv_image = pv_image
-    self.builder = builder
     self.beg_sinogram = beg_sinogram
     self.num_sinograms = num_sinograms
     self.seq = seq
@@ -311,8 +312,7 @@ class TImageTransfer:
     scan_delta = data["attribute"][self.scan_delta_key]["value"][0]["value"]
     start_position = data["attribute"][self.start_position_key]["value"][0]["value"]
 
-    self.builder.Reset()
-    serializer = TraceSerializer.ImageSerializer(self.builder)
+    serializer = TraceSerializer.ImageSerializer()
 
     itype=data["attribute"][self.last_save_dest]["value"][0]["value"]
     if itype == "/exchange/data":
@@ -376,9 +376,6 @@ class TImageTransfer:
 def main():
   args = parse_arguments()
 
-  # Setup serializer
-  builder = flatbuffers.Builder(0)
-
   # Setup zmq context
   context = zmq.Context()#(io_threads=2)
 
@@ -395,7 +392,7 @@ def main():
   time0 = time.time()
   if args.mode == 0: # Read data from PV
     with TImageTransfer(publisher_socket=publisher_socket,
-                        pv_image=args.image_pv, builder=builder, 
+                        pv_image=args.image_pv,
                         beg_sinogram=args.beg_sinogram, 
                         num_sinograms=args.num_sinograms, seq=0) as tdet:
       tdet.start_monitor()  # Infinite loop
@@ -403,12 +400,12 @@ def main():
   elif args.mode == 1: # Simulate data acquisition with a file
     print("Simulating data acquisition on file: {}; iteration: {}".format(args.simulation_file, args.d_iteration))
     simulate_daq_serialized(publisher_socket=publisher_socket, 
-              input_f=args.simulation_file, builder=builder,
+              input_f=args.simulation_file,
               beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
               iteration=args.d_iteration,
               slp=args.iteration_sleep)
   elif args.mode == 2: # Test data acquisition
-    test_daq(publisher_socket=publisher_socket, builder=builder,
+    test_daq(publisher_socket=publisher_socket,
               num_sinograms=args.num_sinograms,                       # Y
               num_sinogram_columns=args.num_sinogram_columns,         # X 
               num_sinogram_projections=args.num_sinogram_projections, # Z

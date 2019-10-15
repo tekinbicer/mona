@@ -30,8 +30,8 @@ class TImage(object):
         o = flatbuffers.number_types.UOffsetTFlags.py_type(self._tab.Offset(6))
         if o != 0:
             x = o + self._tab.Pos
-            from .Dim2 import Dim2
-            obj = Dim2()
+            from .Dim3 import Dim3
+            obj = Dim3()
             obj.Init(self._tab.Bytes, x)
             return obj
         return None
