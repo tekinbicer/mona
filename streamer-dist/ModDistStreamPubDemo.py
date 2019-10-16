@@ -74,7 +74,7 @@ def synchronize_subs(context, publisher_rep_address):
 def main():
   args = parse_arguments()
 
-  context = zmq.Context()
+  context = zmq.Context(io_threads=8)
 
   # TQM setup
   if args.my_distributor_addr is not None:
