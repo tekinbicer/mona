@@ -9,11 +9,11 @@ def main():
 
   # Socket facing producers
   frontend = context.socket(zmq.XPUB)
-  frontend.bind("tcp://*:5559")
+  frontend.bind("tcp://*:50000")
 
   # Socket facing consumers
   backend = context.socket(zmq.XSUB)
-  backend.connect("tcp://164.54.113.143:5560") # mona2=164.54.113.143
+  backend.connect("tcp://mona2.xray.aps.anl.gov:50000") # mona2=164.54.113.143
 
   zmq.proxy(frontend, backend)
 

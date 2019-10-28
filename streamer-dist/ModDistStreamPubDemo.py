@@ -46,6 +46,8 @@ def parse_arguments():
               help='Converts uint16 image byte sequence to float32.')
   parser.add_argument('--uint8_to_float32', action='store_true', default=False,
               help='Converts uint8 image byte sequence to float32.')
+  parser.add_argument('--cast_to_float32', action='store_true', default=False,
+              help='Casts incoming image byte sequence to float32.')
   parser.add_argument('--normalize', action='store_true', default=False,
               help='Normalizes incoming projection data with previously received dark and flat field.')
   parser.add_argument('--remove_invalids', action='store_true', default=False,
@@ -99,6 +101,7 @@ def main():
     publisher_socket.bind(args.my_publisher_addr)
 
   if args.data_source_synch_addr is not None:
+    print("Synchronizing with {}".format(args.data_source_synch_addr))
     synchronize_subs(context, args.data_source_synch_addr)
 
   # Setup serializer
@@ -143,6 +146,9 @@ def main():
     elif args.uint16_to_float32:
       my_image_np.dtype = np.uint16
       sub = np.array(my_image_np, dtype="float32")
+    elif args.cast_to_float32:
+      my_image_np.dtype=np.float32
+      sub = my_image_np
     else: sub = my_image_np
     sub = sub.reshape((1, read_image.Dims().Y(), read_image.Dims().X()))
 
