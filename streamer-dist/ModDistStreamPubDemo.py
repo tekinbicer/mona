@@ -236,7 +236,8 @@ def main():
             tot_MiBs/elapsed_time, total_received/elapsed_time))
 
   # Finalize TMQ
-  if not args.my_distributor_addr is not None:
+  if args.my_distributor_addr is not None:
+    print("Sending finalize message")
     tmq.done_image()
     tmq.finalize_tmq()
 
