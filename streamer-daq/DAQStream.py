@@ -64,12 +64,15 @@ def setup_simulation_data(input_f, beg_sinogram=0, num_sinograms=0):
   print("Loading tomography data: {}".format(input_f))
   t0=time.time()
   idata, flat, dark, itheta = dxchange.read_aps_32id(input_f)
-  idata = np.array(idata, dtype=np.dtype('uint16'))
-  flat = np.array(flat, dtype=np.dtype('uint16'))
-  dark = np.array(dark, dtype=np.dtype('uint16'))
-  itheta = np.array(itheta, dtype=np.dtype('float32'))
+  idata = np.array(idata, dtype=np.float32) #dtype('uint16'))
+  if flat is not None: flat = np.array(flat, dtype=np.float32) #dtype('uint16'))
+  if dark is not None: dark = np.array(dark, dtype=np.float32) #dtype('uint16'))
+  if itheta is not None: itheta = np.array(itheta, dtype=np.float32) #dtype('float32'))
+  # XXX: degree_to_radian is applied twice since the dataset is already normalized. Return it back to correct values. 
+  itheta = itheta*180/np.pi 
   print("Projection dataset IO time={:.2f}; dataset shape={}; size={}; Theta shape={};".format(
                              time.time()-t0 , idata.shape, idata.size, itheta.shape))
+
   return idata, flat, dark, itheta
 
 def serialize_dataset(idata, flat, dark, itheta, seq=0):
@@ -92,7 +95,7 @@ def serialize_dataset(idata, flat, dark, itheta, seq=0):
       data.append(serialized_data)
       time_ser += time.time()-t_ser0
       seq+=1
-  start_index+=flat.shape[0]
+    start_index+=flat.shape[0]
 
   # dark data
   if dark is not None:
@@ -109,7 +112,7 @@ def serialize_dataset(idata, flat, dark, itheta, seq=0):
       time_ser += time.time()-t_ser0
       seq+=1
       data.append(serialized_data)
-  start_index+=dark.shape[0]
+    start_index+=dark.shape[0]
 
   # projection data
   for uniqueId, projId, rotation in zip(range(start_index, start_index+idata.shape[0]), 
