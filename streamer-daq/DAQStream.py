@@ -133,12 +133,18 @@ def serialize_dataset(idata, flat, dark, itheta, seq=0):
   
 def simulate_daq_serialized(publisher_socket, input_f, 
                       beg_sinogram=0, num_sinograms=0, seq=0, slp=0,
-                      iteration=1):
+                      iteration=1, save_after_serialize=False):
 
-  idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
-  serialized_data = serialize_dataset(idata, flat, dark, itheta)
-  del idata, flat, dark
+  serialized_data = None
+  if input_f.endswith('.npy'):
+    serialized_data = np.load(input_f, allow_pickle=True)
+  else:
+    idata, flat, dark, itheta = setup_simulation_data(input_f, beg_sinogram, num_sinograms)
+    serialized_data = serialize_dataset(idata, flat, dark, itheta)
+    if save_after_serialize: np.save("{}.npy".format(input_f), serialized_data)
+    del idata, flat, dark
   #print("data shape={}; bytes={}; type={}; serialized_data_len={}".format(serialized_data.shape, serialized_data.nbytes, type(serialized_data[0]), len(serialized_data[0])))
+  
 
   tot_transfer_size=0
   start_index=0
