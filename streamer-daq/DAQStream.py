@@ -130,11 +130,17 @@ def serialize_dataset(idata, flat, dark, itheta, seq=0):
     data.append(serialized_data)
   print("Serialization time={:.2f}".format(time_ser))
   return np.array(data)
+
+def ordered_subset(max_ind, nelem):
+  nsubsets = np.ceil(max_ind/nelem).astype(int)
+  all_arr = np.array([])
+  for i in np.arange(nsubsets):
+    all_arr = np.append(all_arr, np.arange(start=i, stop=max_ind, step=nsubsets))
+  return all_arr.astype(int)
   
 def simulate_daq_serialized(publisher_socket, input_f, 
                       beg_sinogram=0, num_sinograms=0, seq=0, slp=0,
-                      iteration=1, save_after_serialize=False):
-
+                      iteration=1, save_after_serialize=False, prj_slp=0):
   serialized_data = None
   if input_f.endswith('.npy'):
     serialized_data = np.load(input_f, allow_pickle=True)
@@ -144,14 +150,22 @@ def simulate_daq_serialized(publisher_socket, input_f,
     if save_after_serialize: np.save("{}.npy".format(input_f), serialized_data)
     del idata, flat, dark
   #print("data shape={}; bytes={}; type={}; serialized_data_len={}".format(serialized_data.shape, serialized_data.nbytes, type(serialized_data[0]), len(serialized_data[0])))
-  
-
+  # serialized_data[0] is a byte array
+  #print(serialized_data.shape)
+  #print(serialized_data[0].type)
   tot_transfer_size=0
   start_index=0
   time0 = time.time()
+  nelems_per_subset = 16
+  indices = ordered_subset(serialized_data.shape[0], 
+                              nelems_per_subset)
   for it in range(iteration): # Simulate data acquisition
     print("Current iteration over dataset: {}/{}".format(it+1, iteration))
-    for dchunk in serialized_data:
+    for index in indices:
+    #for dchunk in serialized_data:
+      print("Sending projection {}; sleep time={}".format(index, prj_slp))
+      time.sleep(prj_slp)
+      dchunk = serialized_data[index]
       publisher_socket.send(dchunk, copy=False)
       tot_transfer_size+=len(dchunk)
     time.sleep(slp)
@@ -412,7 +426,7 @@ def main():
               input_f=args.simulation_file,
               beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
               iteration=args.d_iteration,
-              slp=args.iteration_sleep)
+              slp=args.iteration_sleep, prj_slp=0.05)
   elif args.mode == 2: # Test data acquisition
     test_daq(publisher_socket=publisher_socket,
               num_sinograms=args.num_sinograms,                       # Y
