@@ -426,7 +426,7 @@ def main():
               input_f=args.simulation_file,
               beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
               iteration=args.d_iteration,
-              slp=args.iteration_sleep, prj_slp=0.05)
+              slp=args.iteration_sleep, prj_slp=0.1)
   elif args.mode == 2: # Test data acquisition
     test_daq(publisher_socket=publisher_socket,
               num_sinograms=args.num_sinograms,                       # Y
