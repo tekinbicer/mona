@@ -11,6 +11,9 @@ import TraceSerializer
 import h5py as h5
 import dxchange
 import tomopy as tp
+import signal
+import sys
+
 
 def parse_arguments():
   parser = argparse.ArgumentParser(
@@ -141,6 +144,8 @@ def ordered_subset(max_ind, nelem):
 def simulate_daq_serialized(publisher_socket, input_f, 
                       beg_sinogram=0, num_sinograms=0, seq=0, slp=0,
                       iteration=1, save_after_serialize=False, prj_slp=0):
+  global bsignal
+
   serialized_data = None
   if input_f.endswith('.npy'):
     serialized_data = np.load(input_f, allow_pickle=True)
@@ -162,8 +167,22 @@ def simulate_daq_serialized(publisher_socket, input_f,
   for it in range(iteration): # Simulate data acquisition
     print("Current iteration over dataset: {}/{}".format(it+1, iteration))
     for index in indices:
+      # Check if signal received
+      if bsignal:
+        while True:
+          cmd = input("\nSignal received, (q)uit or (c)ontinue: ")
+          if cmd == 'q' or cmd == 'c': break
+          else: print("Unknown command: {}".format(cmd))
+        if cmd == 'q':
+          print("Exiting...")
+          sys.exit(0)
+        if cmd == 'c':
+          bsignal = False
+          print("Continue streaming projections.")
+
     #for dchunk in serialized_data:
-      print("Sending projection {}; sleep time={}".format(index, prj_slp))
+      #print("Sending projection {}; sleep time={}".format(index, prj_slp))
+      print("Sending projection {}".format(index))
       time.sleep(prj_slp)
       dchunk = serialized_data[index]
       publisher_socket.send(dchunk, copy=False)
@@ -181,9 +200,11 @@ def simulate_daq_serialized(publisher_socket, input_f,
 
 
 
+bsignal=False
 def simulate_daq(publisher_socket, input_f, 
                       beg_sinogram=0, num_sinograms=0, seq=0, slp=0,
                       iteration=1):
+
 
   serializer = TraceSerializer.ImageSerializer()
 
@@ -233,6 +254,7 @@ def simulate_daq(publisher_socket, input_f,
     # Send projection data
     for uniqueId, projId, rotation in zip(range(start_index, start_index+idata.shape[0]), 
                                           range(idata.shape[0]), itheta):
+        
       t_ser0 =  time.time()
       #builder.Reset()
       proj =  idata[projId]
@@ -398,6 +420,12 @@ class TImageTransfer:
 
 def main():
   args = parse_arguments()
+  # Register a signal handler for this function
+  def signal_handler(sig, frame):
+    global bsignal
+    bsignal = True 
+  signal.signal(signal.SIGINT, signal_handler)
+
 
   # Setup zmq context
   context = zmq.Context()#(io_threads=2)
@@ -426,7 +454,7 @@ def main():
               input_f=args.simulation_file,
               beg_sinogram=args.beg_sinogram, num_sinograms=args.num_sinograms,
               iteration=args.d_iteration,
-              slp=args.iteration_sleep, prj_slp=0.1)
+              slp=args.iteration_sleep, prj_slp=0.6)
   elif args.mode == 2: # Test data acquisition
     test_daq(publisher_socket=publisher_socket,
               num_sinograms=args.num_sinograms,                       # Y
