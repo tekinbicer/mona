@@ -2,7 +2,7 @@
 CC = cc
 
 # Flags
-CFLAGS = -std=gnu99 -O3 -Wall -Wextra
+CFLAGS = -std=gnu99 -O3 -Wall -Wextra -Wl,--no-undefined
 CFLAGS += -g -fPIC
 
 LIBS = -lzmq -lpython3.6m #-lpython2.7
@@ -36,7 +36,7 @@ server: $(COMMON_OBJS) $(SERVER_OBJS)
 	$(CC) $(CFLAGS) -o $@ $(SERVER_OBJS) $(INCLUDES) $(LIBDIRS) $(LIBS)
 
 _tracemq.so: $(COMMON_OBJS) $(SERVER_OBJS) $(SWIGOBJ)
-	$(CC) $(CFLAGS) -o $(TARGET) $(LIBDIRS) $(LIBS) $(SERVER_OBJS) $(LDFLAGS) $(SWIGOBJ)
+	$(CC) $(CFLAGS) -o $(TARGET) $(LIBDIRS) $(SERVER_OBJS) $(LDFLAGS) $(SWIGOBJ) $(LIBS)
 
 swig_server_setup: 
 	$(CCSWIG) $(SWIGFLAGS) $(SWIGFILE)
