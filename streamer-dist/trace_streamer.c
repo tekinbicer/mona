@@ -22,7 +22,7 @@ void tracemq_setup_msg_header(
 tomo_msg_t* tracemq_prepare_data_req_msg(uint64_t seq_n)
 {
   size_t tot_msg_size = sizeof(tomo_msg_t);
-  tomo_msg_t *msg = malloc(tot_msg_size);
+  tomo_msg_t *msg = (tomo_msg_t *)malloc(tot_msg_size);
   tracemq_setup_msg_header(msg, seq_n, TRACEMQ_MSG_DATA_REQ, tot_msg_size);
 
   return msg;
@@ -33,7 +33,7 @@ tomo_msg_t* tracemq_prepare_data_rep_msg( uint64_t seq_n, int projection_id,
                                           uint64_t data_size, float *data)
 {
   uint64_t tot_msg_size=sizeof(tomo_msg_t)+sizeof(tomo_msg_data_t)+data_size;
-  tomo_msg_t *msg_h = malloc(tot_msg_size);
+  tomo_msg_t *msg_h = (tomo_msg_t *)malloc(tot_msg_size);
   tomo_msg_data_t *msg = (tomo_msg_data_t *) msg_h->data;
   tracemq_setup_msg_header(msg_h, seq_n, TRACEMQ_MSG_DATA_REP, tot_msg_size);
 
@@ -65,7 +65,7 @@ tomo_msg_t* tracemq_prepare_data_info_rep_msg(uint64_t seq_n,
                                               uint64_t tn_sinograms)
 {
   uint64_t tot_msg_size = sizeof(tomo_msg_t)+sizeof(tomo_msg_data_info_rep_t);
-  tomo_msg_t *msg = malloc(tot_msg_size);
+  tomo_msg_t *msg = (tomo_msg_t *)malloc(tot_msg_size);
   tracemq_setup_msg_header(msg, seq_n, TRACEMQ_MSG_DATAINFO_REP, tot_msg_size);
 
   tomo_msg_data_info_rep_t *info = (tomo_msg_data_info_rep_t *) msg->data;
@@ -88,7 +88,7 @@ void tracemq_print_data_info_rep_msg(tomo_msg_data_info_rep_t *msg){
 tomo_msg_t* tracemq_prepare_data_info_req_msg(uint64_t seq_n, uint32_t comm_rank, uint32_t comm_size){
   uint64_t tot_msg_size = sizeof(tomo_msg_t)+sizeof(tomo_msg_data_info_req_t);
   printf("total message size=%zu\n", tot_msg_size);
-  tomo_msg_t *msg = malloc(tot_msg_size);
+  tomo_msg_t *msg = (tomo_msg_t *)malloc(tot_msg_size);
   tracemq_setup_msg_header(msg, seq_n, TRACEMQ_MSG_DATAINFO_REQ, tot_msg_size);
 
   tomo_msg_data_info_req_t *info = (tomo_msg_data_info_req_t *) msg->data;
@@ -103,7 +103,7 @@ tomo_msg_data_info_req_t* tracemq_read_data_info_req(tomo_msg_t *msg){
 
 tomo_msg_t* tracemq_prepare_fin_msg(uint64_t seq_n){
   uint64_t tot_msg_size = sizeof(tomo_msg_t);
-  tomo_msg_t *msg = malloc(tot_msg_size);
+  tomo_msg_t *msg = (tomo_msg_t *) malloc(tot_msg_size);
   tracemq_setup_msg_header(msg, seq_n, TRACEMQ_MSG_FIN_REP, tot_msg_size);
 
   return msg;
@@ -127,7 +127,7 @@ tomo_msg_t* tracemq_recv_msg(void *server){
   //printf("zmq_msg_size(&zmsg)=%zu; ((tomo_msg_t*)&zmsg)->size=%zu", zmq_msg_size(&zmsg), ((tomo_msg_t*)&zmsg)->size);
   //assert(zmq_msg_size(&zmsg)==((tomo_msg_t*)&zmsg)->size);
 
-  tomo_msg_t *msg = malloc(((tomo_msg_t*)zmq_msg_data(&zmsg))->size);
+  tomo_msg_t *msg = (tomo_msg_t *) malloc(((tomo_msg_t*)zmq_msg_data(&zmsg))->size);
   /// Zero-copy would have been better
   memcpy(msg, zmq_msg_data(&zmsg), zmq_msg_size(&zmsg));
   zmq_msg_close(&zmsg);
@@ -163,7 +163,7 @@ tomo_msg_t** generate_tracemq_worker_msgs(float *data, int dims[], int data_id,
   int nsin = dims[0]/n_ranks;
   int remaining = dims[0]%n_ranks;
 
-  tomo_msg_t **msgs = malloc(n_ranks*sizeof(tomo_msg_t*));
+  tomo_msg_t **msgs = (tomo_msg_t **) malloc(n_ranks*sizeof(tomo_msg_t*));
 
   int curr_sinogram_id = 0;
   for(int i=0; i<n_ranks; ++i){

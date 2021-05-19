@@ -13,7 +13,7 @@ def main():
 
   # Socket facing consumers
   backend = context.socket(zmq.XSUB)
-  backend.connect("tcp://mona2.xray.aps.anl.gov:50000") # mona2=164.54.113.143
+  backend.connect("tcp://140.221.233.250:50000") # StarLight DTN=140.221.233.250; mona2=164.54.113.143
 
   zmq.proxy(frontend, backend)
 

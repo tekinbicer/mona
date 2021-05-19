@@ -1,15 +1,15 @@
 # Compiler
-CC = cc
+CC = icc
 
 # Flags
-CFLAGS = -std=gnu99 -O3 -Wall -Wextra
+CFLAGS = -std=gnu99 -O2 -Wall -Wextra
 CFLAGS += -g -fPIC
 
-TPYHOME = /local/tbicer/anaconda2/envs/py36
+TPYHOME = /home/bicer/.conda/envs/demo
 
-LIBS = -lzmq -lpython3.6m #-lpython2.7
+LIBS = -lzmq -lpython3.7m #-lpython2.7
 LIBDIRS = -L${TPYHOME}/lib
-INCLUDES = -I${TPYHOME}/include
+INCLUDES = -I${TPYHOME}/include -I${TPYHOME}/lib/python3.7/site-packages/numpy/core/include
 
 LDFLAGS = -shared
 
@@ -22,7 +22,7 @@ SWIGCFILE = $(SWIGFILE:.i=_wrap.c)
 
 CCSWIG = swig
 SWIGFLAGS = -python
-PYTHONINC = -I${TPYHOME}/include/python3.6m
+PYTHONINC = -I${TPYHOME}/include/python3.7m
 #-I/home/software/anaconda3/5.0.0/lib/python3.6/site-packages/numpy/core/include -I/home/software/anaconda3/5.0.0/include/python3.6m #-I/home/beams/USER2BMB/Apps/BlueSky/include/python3.6m #-I/local/tbicer/anaconda2/include/python2.7
 
 
@@ -57,3 +57,4 @@ trace_streamer.o: trace_streamer.c trace_streamer.h
 
 clean:
 	rm -f $(PROGS) $(SWIGOBJ) $(SWIGCFILE) tracemq.py tracemq.pyc *.so *.o *.a *~ *.lst *.tmp .pure *.bak *.log
+	rm -rf ./__pycache__

@@ -35,8 +35,8 @@ class XTraceImgReceive():
       img_data, itype = self.dataModel.receive()
       print("received img shape={}; counter={}; type={}".format(
               img_data.shape, self.dataModel.ndata, img_data.dtype))
-      for i in range(img_data.shape[0]):
-        imsave("./tmp/{}_{}-img.jpg".format(self.dataModel.ndata, i), img_data[i,:,:])
+      #for i in range(img_data.shape[0]):
+      #  imsave("./tmp/{}_{}-img.jpg".format(self.dataModel.ndata, i), img_data[i,:,:])
 
 
 

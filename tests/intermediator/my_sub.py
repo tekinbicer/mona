@@ -17,7 +17,7 @@ class Poller(Thread):
   def run(self):
     print('start poller {}'.format(self.id))
     subscriber = context.socket(zmq.SUB)
-    subscriber.connect("tcp://127.0.0.1:50000")
+    subscriber.bind("tcp://*:52000")
     subscriber.setsockopt_string(zmq.SUBSCRIBE, self.topic)
     self.loop = True
     while self.loop:
@@ -32,12 +32,12 @@ context = zmq.Context()
 poller1 = Poller(1, 'NASDA')
 poller1.start()
 
-poller2 = Poller(2, 'NASDAQ')
-poller2.start()
+#poller2 = Poller(2, 'NASDAQ')
+#poller2.start()
 
 time.sleep(60*5)
 
 poller1.stop()
-poller2.stop()
+#poller2.stop()
 
 sys.exit(0)

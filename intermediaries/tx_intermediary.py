@@ -47,7 +47,7 @@ def txparser():
 
   # ZMQ Options
   parser.add_argument("--zmq_io_threads", dest="zmq_io_threads", 
-    required=False, type=int, default=2,
+    required=False, type=int, default=4,
     help="Number of io threads in zmq context. Default value is 2.")
 
   args=parser.parse_args()

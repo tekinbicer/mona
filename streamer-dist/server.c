@@ -83,8 +83,8 @@ int handshake(char *bindip, int port, int row, int col)
   /// Setup worker data structures
   n_workers = info->comm_size;
   printf("n_workers=%d\n",n_workers);
-  worker_ids = malloc(n_workers*sizeof(int));
-  workers = malloc(n_workers*sizeof(void*)); assert(workers!=NULL);
+  worker_ids = (int*)malloc(n_workers*sizeof(int));
+  workers = (void**)malloc(n_workers*sizeof(void*)); assert(workers!=NULL);
   worker_ids[0] = info->comm_rank;
   tracemq_free_msg(msg);
 
